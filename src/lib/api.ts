@@ -1,11 +1,9 @@
 /**
  * PoCW Oracle API client
- * Communicates with the oracle-service at NEXT_PUBLIC_ORACLE_URL (default http://localhost:3000)
+ * Browser calls are sent to internal frontend API proxy routes.
  */
 
-const ORACLE_URL =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_ORACLE_URL) ||
-  "http://localhost:3000";
+const ORACLE_PROXY_BASE = "/api/oracle";
 
 // ─── Types mirroring oracle-service SDK types ────────────────────────────────
 
@@ -130,7 +128,7 @@ export async function uploadFile(
 ): Promise<{ knowledgeId: string; status: string; contentId?: number }> {
   let res: Response;
   try {
-    res = await fetch(`${ORACLE_URL}/api/upload`, {
+    res = await fetch(`${ORACLE_PROXY_BASE}/upload`, {
       method: "POST",
       headers: { "Content-Type": file.type || "application/octet-stream" },
       body: await file.arrayBuffer(),
@@ -149,7 +147,7 @@ export async function indexContent(
 ): Promise<{ knowledgeId: string; status: string; contentId?: number }> {
   let res: Response;
   try {
-    res = await fetch(`${ORACLE_URL}/api/index`, {
+    res = await fetch(`${ORACLE_PROXY_BASE}/index`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source }),
@@ -168,7 +166,7 @@ export async function pollIndexStatus(
 ): Promise<{ knowledgeId: string; status: string; error?: string }> {
   let res: Response;
   try {
-    res = await fetch(`${ORACLE_URL}/api/index/${knowledgeId}`);
+    res = await fetch(`${ORACLE_PROXY_BASE}/index/${knowledgeId}`);
   } catch (err) {
     throw oracleConnectionError(err);
   }
@@ -185,7 +183,7 @@ export async function startVerify(
 ): Promise<{ sessionId: string; question: VerifyQuestion }> {
   let res: Response;
   try {
-    res = await fetch(`${ORACLE_URL}/api/verify`, {
+    res = await fetch(`${ORACLE_PROXY_BASE}/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ knowledgeId, subject, config }),
@@ -205,7 +203,7 @@ export async function submitAnswer(
 ): Promise<AnswerFeedback> {
   let res: Response;
   try {
-    res = await fetch(`${ORACLE_URL}/api/verify/${sessionId}/answer`, {
+    res = await fetch(`${ORACLE_PROXY_BASE}/verify/${sessionId}/answer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ answer }),
@@ -222,7 +220,7 @@ export async function submitAnswer(
 export async function getResult(sessionId: string): Promise<PoCWResult> {
   let res: Response;
   try {
-    res = await fetch(`${ORACLE_URL}/api/verify/${sessionId}/result`);
+    res = await fetch(`${ORACLE_PROXY_BASE}/verify/${sessionId}/result`);
   } catch (err) {
     throw oracleConnectionError(err);
   }
@@ -239,6 +237,13 @@ export async function getResult(sessionId: string): Promise<PoCWResult> {
  * Prefers the `error` field from a JSON body; falls back to a short status description.
  */
 async function extractErrorMessage(res: Response, prefix: string): Promise<string> {
+  if (res.status === 401) {
+    return (
+      `${prefix}: Oracle API authentication failed (401). ` +
+      "Check frontend server POCW_API_KEY and oracle POCW_API_KEY values."
+    );
+  }
+
   try {
     const body = await res.clone().json();
     if (typeof body?.error === "string") {
@@ -253,8 +258,8 @@ async function extractErrorMessage(res: Response, prefix: string): Promise<strin
 function oracleConnectionError(err: unknown): Error {
   if (err instanceof TypeError && err.message === "Failed to fetch") {
     return new Error(
-      `Cannot reach the oracle at ${ORACLE_URL}. ` +
-      "Make sure the oracle service is running and CORS is configured for this domain."
+      `Cannot reach frontend oracle proxy route at ${ORACLE_PROXY_BASE}. ` +
+      "Make sure Next.js is running and POCW_ORACLE_BASE_URL points to a reachable oracle backend."
     );
   }
   return err instanceof Error ? err : new Error("Unknown error");
