@@ -60,10 +60,15 @@ export function GradingResults({
   ];
 
   const { controllerAddress, sbtAddress } = getChainConfig(chainId);
-  const hasContracts = controllerAddress !== "0x0000000000000000000000000000000000000000"
-    && sbtAddress !== "0x0000000000000000000000000000000000000000";
-
   const isOnchain = result.attestation?.type === "onchain";
+  const onchainAttestation = isOnchain ? result.attestation as OnchainAttestation : null;
+
+  // Prefer live attestation addresses when available; env-based chain config is build-time only.
+  const resolvedControllerAddress = (onchainAttestation?.controllerAddress ?? controllerAddress) as `0x${string}`;
+  const resolvedSbtAddress = (onchainAttestation?.sbtAddress ?? sbtAddress) as `0x${string}`;
+  const hasContracts = resolvedControllerAddress !== "0x0000000000000000000000000000000000000000"
+    && resolvedSbtAddress !== "0x0000000000000000000000000000000000000000";
+
   const canMint = result.competenceIndicator && isOnchain && hasContracts && !!walletAddress;
 
   const correctCount = result.response_detail?.filter(r => r.correct).length ?? 0;
@@ -259,10 +264,10 @@ export function GradingResults({
             </div>
             {canMint ? (
               <MintButton
-                attestation={result.attestation as OnchainAttestation}
+                attestation={onchainAttestation as OnchainAttestation}
                 userAddress={walletAddress as `0x${string}`}
-                controllerAddress={controllerAddress as `0x${string}`}
-                sbtAddress={sbtAddress as `0x${string}`}
+                controllerAddress={resolvedControllerAddress}
+                sbtAddress={resolvedSbtAddress}
               />
             ) : !walletAddress ? (
               <p className="text-xs text-muted-foreground text-center">
@@ -270,7 +275,7 @@ export function GradingResults({
               </p>
             ) : !hasContracts ? (
               <p className="text-xs text-muted-foreground text-center">
-                Contract not deployed on this chain — set NEXT_PUBLIC_CONTROLLER_ADDRESS_{chainId}
+                Contract addresses unavailable for this session and chain — verify NEXT_PUBLIC_CONTROLLER_ADDRESS_{chainId}
               </p>
             ) : !isOnchain ? (
               <p className="text-xs text-muted-foreground text-center">
