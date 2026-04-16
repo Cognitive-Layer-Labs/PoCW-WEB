@@ -21,15 +21,35 @@ import {
 import { getChainConfig } from "@/lib/contracts";
 import { Wallet, FileUp, Settings2, BrainCircuit, Award, AlertCircle, Loader2, RotateCcw, AlertTriangle } from "lucide-react";
 
-// Dev mode: expected chain ID (Anvil localhost)
-const DEV_CHAIN_ID = 31337;
-const DEV_CHAIN = {
-  chainId: DEV_CHAIN_ID,
-  chainName: "Anvil Local",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: ["http://127.0.0.1:8545"],
-  blockExplorerUrls: ["http://localhost:5100"],
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+const CHAIN_META: Record<number, {
+  chainName: string;
+  nativeCurrency: { name: string; symbol: string; decimals: number };
+  rpcUrls: string[];
+  blockExplorerUrls: string[];
+}> = {
+  31337: {
+    chainName: "Anvil Local",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["http://127.0.0.1:8545"],
+    blockExplorerUrls: ["http://localhost:5100"],
+  },
+  84532: {
+    chainName: "Base Sepolia",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://sepolia.base.org"],
+    blockExplorerUrls: ["https://base-sepolia.blockscout.com"],
+  },
+  8453: {
+    chainName: "Base Mainnet",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://mainnet.base.org"],
+    blockExplorerUrls: ["https://basescan.org"],
+  },
 };
+
+const CHAIN_PRIORITY = [84532, 8453, 31337] as const;
 
 type Step = "wallet" | "upload" | "settings" | "quiz" | "results";
 
@@ -56,23 +76,50 @@ export function VerifyFlow() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Auto-switch to Anvil in dev mode
-  const switchToDevChain = useCallback(async () => {
+  const chainId = useChainId();
+  const { controllerAddress, sbtAddress } = getChainConfig(chainId);
+
+  const hasContracts = controllerAddress !== ZERO_ADDRESS
+    && sbtAddress !== ZERO_ADDRESS;
+
+  const deployedChainIds = CHAIN_PRIORITY.filter((id) => {
+    const config = getChainConfig(id);
+    return config.controllerAddress !== ZERO_ADDRESS && config.sbtAddress !== ZERO_ADDRESS;
+  });
+
+  const requiresConfiguredChain = deployedChainIds.length > 0;
+  const isWrongNetwork = requiresConfiguredChain && !hasContracts;
+  const preferredChainId = hasContracts ? chainId : deployedChainIds[0];
+  const preferredChainMeta = preferredChainId ? CHAIN_META[preferredChainId] : undefined;
+  const currentChainName = CHAIN_META[chainId]?.chainName ?? `Chain ${chainId}`;
+  const deployedChainLabels = deployedChainIds
+    .map((id) => `${CHAIN_META[id]?.chainName ?? `Chain ${id}`} (${id})`)
+    .join(", ");
+
+  const switchToPreferredChain = useCallback(async () => {
+    if (!preferredChainId || !preferredChainMeta) return;
+
     try {
       await window.ethereum?.request?.({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: `0x${DEV_CHAIN_ID.toString(16)}` }],
+        params: [{ chainId: `0x${preferredChainId.toString(16)}` }],
       });
     } catch (switchError: any) {
-      // Chain not added to MetaMask — add it
+      // Chain not added to wallet — add it
       if (switchError?.code === 4902) {
         await window.ethereum?.request?.({
           method: "wallet_addEthereumChain",
-          params: [DEV_CHAIN],
+          params: [{
+            chainId: `0x${preferredChainId.toString(16)}`,
+            chainName: preferredChainMeta.chainName,
+            nativeCurrency: preferredChainMeta.nativeCurrency,
+            rpcUrls: preferredChainMeta.rpcUrls,
+            blockExplorerUrls: preferredChainMeta.blockExplorerUrls,
+          }],
         });
       }
     }
-  }, []);
+  }, [preferredChainId, preferredChainMeta]);
 
   // Content indexing
   const [knowledgeId, setKnowledgeId] = useState<string | null>(null);
@@ -93,11 +140,6 @@ export function VerifyFlow() {
   const handleIndexed = (kid: string) => {
     setKnowledgeId(kid);
   };
-
-  const chainId = useChainId();
-  const { controllerAddress, sbtAddress } = getChainConfig(chainId);
-  const hasContracts = controllerAddress !== "0x0000000000000000000000000000000000000000"
-    && sbtAddress !== "0x0000000000000000000000000000000000000000";
 
   const handleStartQuiz = async () => {
     if (!knowledgeId || !address) return;
@@ -254,21 +296,23 @@ export function VerifyFlow() {
             </div>
 
             {/* Wrong chain warning */}
-            {mounted && isConnected && chainId !== DEV_CHAIN_ID && (
+            {mounted && isConnected && isWrongNetwork && (
               <div className="w-full p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 text-left">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 text-yellow-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-yellow-300 font-medium">Wrong network</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      You're on chain {chainId}. This demo requires <strong>Anvil Local (chain {DEV_CHAIN_ID})</strong>.
+                      You are connected to <strong>{currentChainName} ({chainId})</strong>. This app has contracts configured on <strong>{deployedChainLabels}</strong>.
                     </p>
-                    <button
-                      onClick={switchToDevChain}
-                      className="mt-2 text-xs text-primary hover:underline font-medium"
-                    >
-                      Switch to Anvil →
-                    </button>
+                    {preferredChainId && preferredChainMeta && (
+                      <button
+                        onClick={switchToPreferredChain}
+                        className="mt-2 text-xs text-primary hover:underline font-medium"
+                      >
+                        Switch to {preferredChainMeta.chainName} →
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -281,16 +325,16 @@ export function VerifyFlow() {
                   <span className="text-sm text-green-300 font-mono">
                     {address.slice(0, 10)}…{address.slice(-6)}
                   </span>
-                  {chainId === DEV_CHAIN_ID && (
-                    <span className="text-[10px] text-green-400/60 ml-1">Anvil</span>
-                  )}
+                  <span className="text-[10px] text-green-400/60 ml-1">{currentChainName}</span>
                 </div>
                 <button
                   onClick={() => setStep("upload")}
-                  disabled={chainId !== DEV_CHAIN_ID}
+                  disabled={isWrongNetwork}
                   className="w-full h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {chainId === DEV_CHAIN_ID ? "Continue" : "Switch to Anvil first"}
+                  {isWrongNetwork
+                    ? `Switch to ${preferredChainMeta?.chainName ?? "configured chain"} first`
+                    : "Continue"}
                 </button>
               </div>
             ) : (
