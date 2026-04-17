@@ -323,6 +323,7 @@ function MintButton({
   controllerAddress: `0x${string}`;
   sbtAddress: `0x${string}`;
 }) {
+  const [isFixingRpc, setIsFixingRpc] = useState(false);
   const { writeContract, data: hash, isPending, error } = useWriteContract();
 
   const { isLoading: isConfirming, isSuccess: isConfirmed } =
@@ -376,8 +377,72 @@ function MintButton({
     });
   };
 
+  const isRpcCapacityError =
+    !!error &&
+    /RPC endpoint returned too many errors|Requested resource not available/i.test(error.message);
+
+  const handleRepairRpc = async () => {
+    setIsFixingRpc(true);
+    try {
+      const ethereum = (window as Window & {
+        ethereum?: {
+          request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+        };
+      }).ethereum;
+
+      if (!ethereum?.request) {
+        return;
+      }
+
+      await ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: "0x14A34",
+          chainName: "Base Sepolia",
+          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+          rpcUrls: [
+            "https://sepolia.base.org",
+            "https://base-sepolia.publicnode.com",
+          ],
+          blockExplorerUrls: ["https://base-sepolia.blockscout.com"],
+        }],
+      });
+
+      await ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: "0x14A34" }],
+      });
+    } finally {
+      setIsFixingRpc(false);
+    }
+  };
+
   if (error) {
     const msg = error.message.length > 120 ? error.message.slice(0, 120) + "..." : error.message;
+
+    if (isRpcCapacityError) {
+      return (
+        <div className="space-y-2">
+          <p className="text-xs text-red-400 text-center">
+            Wallet RPC for Base Sepolia is currently overloaded. Refresh your network RPC and retry mint.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleRepairRpc}
+              variant="outline"
+              className="flex-1 gap-2"
+              disabled={isFixingRpc}
+            >
+              {isFixingRpc ? "Fixing RPC..." : "Repair Base Sepolia RPC"}
+            </Button>
+            <Button onClick={handleMint} variant="outline" className="flex-1 gap-2">
+              Retry Mint
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-2">
         <p className="text-xs text-red-400 text-center">{msg}</p>
