@@ -63,18 +63,43 @@ export interface ChainDeploy {
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
+// Keep production-safe fallbacks for Base Sepolia in case build-time NEXT_PUBLIC_* vars
+// are not injected by the deployment platform during static client bundling.
+const BASE_SEPOLIA_FALLBACK: ChainDeploy = {
+  controllerAddress: "0xC327B012811d88A27817fc7159A0a57Fb503e2AD",
+  sbtAddress: "0x9E75B497411f3Eb85018591Ec865B82cC2B6409F",
+};
+
+function readAddressEnv(name: string, fallback: `0x${string}` = ZERO): `0x${string}` {
+  const value = process.env[name];
+  if (typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value)) {
+    return value as `0x${string}`;
+  }
+  return fallback;
+}
+
 /**
  * Known chain deployments. Add entries as contracts are deployed.
  * Uses NEXT_PUBLIC_ env vars which Next.js inlines at build time.
  */
 const KNOWN_CHAINS: Record<number, ChainDeploy> = {
   31337: {
-    controllerAddress: (process.env.NEXT_PUBLIC_CONTROLLER_ADDRESS_31337 ?? ZERO) as `0x${string}`,
-    sbtAddress: (process.env.NEXT_PUBLIC_SBT_ADDRESS_31337 ?? ZERO) as `0x${string}`,
+    controllerAddress: readAddressEnv("NEXT_PUBLIC_CONTROLLER_ADDRESS_31337"),
+    sbtAddress: readAddressEnv("NEXT_PUBLIC_SBT_ADDRESS_31337"),
   },
   84532: {
-    controllerAddress: (process.env.NEXT_PUBLIC_CONTROLLER_ADDRESS_84532 ?? ZERO) as `0x${string}`,
-    sbtAddress: (process.env.NEXT_PUBLIC_SBT_ADDRESS_84532 ?? ZERO) as `0x${string}`,
+    controllerAddress: readAddressEnv(
+      "NEXT_PUBLIC_CONTROLLER_ADDRESS_84532",
+      BASE_SEPOLIA_FALLBACK.controllerAddress
+    ),
+    sbtAddress: readAddressEnv(
+      "NEXT_PUBLIC_SBT_ADDRESS_84532",
+      BASE_SEPOLIA_FALLBACK.sbtAddress
+    ),
+  },
+  8453: {
+    controllerAddress: readAddressEnv("NEXT_PUBLIC_CONTROLLER_ADDRESS_8453"),
+    sbtAddress: readAddressEnv("NEXT_PUBLIC_SBT_ADDRESS_8453"),
   },
 };
 
