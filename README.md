@@ -1,202 +1,79 @@
-# PoCW-WEB Frontend
+# PoCW landing
 
-Next.js frontend for PoCW verification flow. Browser traffic goes to internal frontend API routes, and the server-side proxy calls Oracle with bearer auth. Contract addresses are selected by wallet chainId.
+Public landing for **PoCW (Proof of Cognitive Work)**, served at <https://pocw.baghici.com>.
+Anyone can drop a document, watch the engine turn it into a knowledge graph, take an adaptive
+test on it and explore the graph with their results highlighted. No account, nothing to install.
 
-## Quick Start
+Next.js 15 (App Router) · Tailwind 3 · Radix Dialog · `react-force-graph-2d` (bundled, no CDN).
 
-1. Install dependencies:
+## How it fits together
+
+```
+browser ──► /api/engine/<path>  (this app, route handler)
+                 │  adds Authorization: Bearer $ENGINE_API_KEY
+                 │  forwards X-Forwarded-For (first IP), body ≤ 10 MB, 120 s timeout
+                 ▼
+            $ENGINE_URL/api/<path>  (PoCW engine, never exposed publicly)
+```
+
+The proxy (`src/app/api/engine/[...path]/route.ts`) only forwards these routes; everything
+else gets a 404 and paths with `..`, encoded slashes or empty segments get a 400:
+
+| Method | Path                               | Used for                          |
+| ------ | ---------------------------------- | --------------------------------- |
+| POST   | `upload`                           | raw PDF / text / Markdown upload  |
+| POST   | `index`                            | index an http(s) URL (incl. YouTube) |
+| GET    | `index/:knowledgeId`               | indexing status (202 + Retry-After while working) |
+| GET    | `graph/:knowledgeId`               | nodes + edges for the graph view  |
+| POST   | `verify`                           | start a test session              |
+| POST   | `verify/:sessionId/answer`         | submit an answer                  |
+| GET    | `verify/:sessionId/result`         | final result (fetched once)       |
+
+Status, `Retry-After` and `Content-Type` are passed through. Listing every indexed document
+(`GET /api/index`) is deliberately not exposed.
+
+## Flow
+
+1. **Drop** a PDF, `.txt` or `.md` (≤ 10 MB, checked client-side), paste text, or paste a link.
+2. **Indexing**: the page polls `index/:id`, honouring `Retry-After`, and handles `failed`.
+3. **Ready**: title, concept/connection count, *View knowledge graph*, and a short test setup
+   (up to 5/10/15/20 questions, Gentle/Standard/Demanding, question types).
+4. **Test**: one question at a time (written, multiple choice, true/false) with feedback after each.
+5. **Results**: 0–100 score with its 95 % interval, θ ± SE, pass bar, Bloom levels reached,
+   per-question breakdown, the engine's disclaimers, and the graph colored by outcome
+   (mastered / asked but not mastered / not tested).
+
+Progress is kept in `sessionStorage`, so a refresh resumes where you were (expired sessions
+and missing documents fall back gracefully).
+
+## Configuration
+
+Server-only environment variables (see `.env.example`):
+
+| Variable         | Default               | Meaning                                  |
+| ---------------- | --------------------- | ---------------------------------------- |
+| `ENGINE_URL`     | `http://engine:3000`  | Engine base URL, without `/api`          |
+| `ENGINE_API_KEY` | (required)            | Bearer token the engine expects on `/api/*` |
+
+## Develop
 
 ```bash
 npm install
+cp .env.example .env.local   # point ENGINE_URL at a running engine
+npm run dev                  # http://localhost:3001
 ```
 
-2. Create local env from the template:
+Checks: `npm run typecheck`, `npm run lint`, `npm run build`.
+
+## Deploy
+
+`next.config.ts` builds a standalone server and sets security headers (CSP, `nosniff`,
+`Referrer-Policy`, `X-Frame-Options: DENY`, `Permissions-Policy`).
 
 ```bash
-cp sample.env .env.local
+docker build -t pocw-web .
+docker run -p 3000:3000 -e ENGINE_URL=http://engine:3000 -e ENGINE_API_KEY=... pocw-web
 ```
 
-3. Update local values in `.env.local`.
-
-4. Start dev server:
-
-```bash
-npm run dev
-```
-
-Default UI URL: `http://localhost:3001`
-
-## Cloudflare Workers Deployment (OpenNext)
-
-This repo is configured to deploy on Cloudflare Workers using OpenNext.
-
-- Build command: `npx opennextjs-cloudflare build`
-- Deploy command: `npx opennextjs-cloudflare deploy`
-
-Equivalent npm scripts:
-
-- `npm run cf:build` -> build only
-- `npm run cf:deploy` -> deploy only
-- `npm run deploy` -> build then deploy
-- `npm run preview` -> build then preview in Workers runtime
-
-Configuration files used:
-
-- `wrangler.jsonc`
-- `open-next.config.ts`
-
-You do not need a `wrangler.toml` because this repo uses `wrangler.jsonc`.
-
-### Cloudflare Variables/Secrets
-
-For Cloudflare environments (Preview/Production), set values in Cloudflare dashboard instead of relying on local `.env.*` files:
-
-- Secret: `POCW_API_KEY`
-- Variable: `POCW_ORACLE_BASE_URL`
-- Variables: `NEXT_PUBLIC_CONTROLLER_ADDRESS_84532`, `NEXT_PUBLIC_SBT_ADDRESS_84532` (or mainnet equivalents)
-
-Do not create `NEXT_PUBLIC_POCW_API_KEY`.
-
-## Environment Variables
-
-### Required frontend vars
-
-- Server-only:
-  - `POCW_ORACLE_BASE_URL`
-  - `POCW_API_KEY`
-- Browser-visible:
-  - `NEXT_PUBLIC_CONTROLLER_ADDRESS_31337` and `NEXT_PUBLIC_SBT_ADDRESS_31337` for local hardhat
-  - `NEXT_PUBLIC_CONTROLLER_ADDRESS_84532` and `NEXT_PUBLIC_SBT_ADDRESS_84532` for Base Sepolia testnet
-
-### Why NEXT_PUBLIC_ and server-only vars both exist
-
-In Next.js, only variables prefixed with `NEXT_PUBLIC_` are exposed to browser code.
-
-`POCW_API_KEY` is a secret and must stay server-only (no `NEXT_PUBLIC_` prefix). The browser never sends this key directly.
-
-## Which env file for Local vs Testnet/Mainnet
-
-- Local development (`npm run dev`): use `.env.local`
-- Cloudflare deployment (Preview/Production): set variables in Cloudflare dashboard
-
-Because these values are compiled into the frontend at build time, redeploy after env/secret changes.
-
-## Detailed Deployment Env Modes
-
-<details>
-  <summary>Local development mode (.env.local)</summary>
-
-Use when running local node and local oracle service.
-
-Recommended values:
-- `POCW_ORACLE_BASE_URL=http://localhost:3000`
-- `POCW_API_KEY=<same value as oracle-service POCW_API_KEY>`
-- `NEXT_PUBLIC_CONTROLLER_ADDRESS_31337=<local PoCW_Controller address>`
-- `NEXT_PUBLIC_SBT_ADDRESS_31337=<local PoCW_SBT address>`
-
-Flow:
-1. Start local chain and deploy contracts.
-2. Start oracle service locally.
-3. Start frontend with `npm run dev`.
-4. Connect wallet to chain `31337`.
-
-Notes:
-- Local addresses can change after redeploy.
-- Update `.env.local` whenever local contracts are redeployed.
-- Browser calls go to `/api/oracle/*`; frontend proxy injects bearer token.
-
-</details>
-
-<details>
-  <summary>Testnet staging mode (.env.production with Base Sepolia)</summary>
-
-Use when deploying staging/preview to VPS against Base Sepolia.
-
-Recommended values:
-- `POCW_ORACLE_BASE_URL=https://oracle.yourdomain.com`
-- `POCW_API_KEY=<shared bearer secret>`
-- `NEXT_PUBLIC_CONTROLLER_ADDRESS_84532=<Base Sepolia Controller>`
-- `NEXT_PUBLIC_SBT_ADDRESS_84532=<Base Sepolia SBT>`
-
-Flow:
-1. Deploy contracts to Base Sepolia in contracts repo.
-2. Deploy oracle API on VPS with testnet config.
-3. Set frontend `.env.production` with testnet addresses.
-4. Build frontend (`npm run build`) and run (`npm start`).
-5. Connect wallet to Base Sepolia (`84532`).
-
-Notes:
-- Use HTTPS domain for oracle backend.
-- Frontend and oracle can be on different subdomains.
-- Browser should call frontend domain only; frontend server calls oracle domain.
-
-</details>
-
-<details>
-  <summary>Mainnet production mode (.env.production with Base mainnet)</summary>
-
-Use when deploying production against Base mainnet.
-
-Recommended values:
-- `POCW_ORACLE_BASE_URL=https://oracle.yourdomain.com`
-- `POCW_API_KEY=<shared bearer secret>`
-- `NEXT_PUBLIC_CONTROLLER_ADDRESS_8453=<Base Mainnet Controller>`
-- `NEXT_PUBLIC_SBT_ADDRESS_8453=<Base Mainnet SBT>`
-
-Important:
-- The current frontend chain map in `src/lib/contracts.ts` includes `31337` and `84532`.
-- Add chain `8453` there before expecting mainnet addresses to resolve.
-
-Flow:
-1. Deploy audited contracts to Base mainnet.
-2. Configure production oracle with production wallet and strict security.
-3. Set `.env.production` to mainnet values.
-4. Build and restart frontend.
-5. Connect wallet to Base mainnet (`8453`).
-
-Notes:
-- Treat mainnet as immutable release process.
-- Require explicit release checklist and rollback plan.
-
-</details>
-
-## Runtime Address Selection
-
-Frontend picks contract addresses based on connected wallet chainId:
-
-- chain `31337` -> reads `NEXT_PUBLIC_*_31337`
-- chain `84532` -> reads `NEXT_PUBLIC_*_84532`
-- unknown chain -> uses zero address fallback and UI warns deployment is missing
-
-If users switch networks in wallet, app switches target addresses automatically.
-
-## Troubleshooting
-
-- "Contract not deployed on this chain": missing env pair for connected chainId.
-- Oracle API proxy 401: `POCW_API_KEY` mismatch between frontend and oracle-service.
-- Oracle API proxy 500: missing `POCW_API_KEY` or `POCW_ORACLE_BASE_URL` in frontend server env.
-- Oracle API proxy 502: frontend cannot reach oracle URL from server runtime.
-- Changed env but app still old: rebuild frontend after env update.
-
-## Security Notes
-
-- Do not put secrets in `NEXT_PUBLIC_*` vars.
-- Keep `POCW_API_KEY` server-only in frontend env and oracle-service env.
-- Use HTTPS for public oracle endpoint in testnet/mainnet.
-
-## Auth Migration Verification
-
-1. Direct oracle request without token should fail (expected 401):
-
-```bash
-curl -i https://your-oracle-domain/api/index
-```
-
-2. Frontend flow through proxy should succeed (expected 200 on normal flow):
-- Start frontend with `POCW_ORACLE_BASE_URL` and `POCW_API_KEY` set.
-- Run upload/index/verify flow from UI.
-- Confirm browser network requests target frontend `/api/oracle/*` endpoints.
-
-3. Secret exposure check:
-- Ensure `POCW_API_KEY` is absent from browser devtools request headers to oracle domain.
-- Ensure no `NEXT_PUBLIC_POCW_API_KEY` exists.
+The image runs `node server.js` as a non-root user on `0.0.0.0:3000`. Put it behind the
+reverse proxy (Caddy) that terminates TLS for `pocw.baghici.com` and sets `X-Forwarded-For`.
