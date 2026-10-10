@@ -1,24 +1,30 @@
 import type { Metadata, Viewport } from "next";
-import Image from "next/image";
-import Link from "next/link";
 import "./globals.css";
 
+const SITE = (process.env.AUTH_URL || "https://bookmap.baghici.com").replace(/\/+$/, "");
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://pocw.baghici.com"),
-  title: "PoCW: find out how well you understood a document",
+  metadataBase: new URL(SITE),
+  title: { default: "Bookmap: see what stayed with you from a book", template: "%s | Bookmap" },
   description:
-    "Drop in a PDF, notes or a link. PoCW maps its ideas into a knowledge graph, asks adaptive questions, and estimates how much you've grasped.",
+    "Bring a book you've read. Bookmap draws a map of its ideas and asks you a few questions, so you can see what you really took in.",
+  applicationName: "Bookmap",
   openGraph: {
-    title: "PoCW, Proof of Cognitive Work",
-    description: "Turn any document into a knowledge graph and an adaptive test of how well you understood it.",
-    url: "https://pocw.baghici.com",
-    siteName: "PoCW",
+    title: "Bookmap",
+    description: "Turn a book you've read into a map of its ideas, then test yourself on it.",
+    url: SITE,
+    siteName: "Bookmap",
     type: "website",
   },
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#150D1C",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+  themeColor: "#1B1026",
   colorScheme: "dark",
 };
 
@@ -32,24 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to content
         </a>
-        <header className="sticky top-0 z-40 border-b border-line/70 bg-ink/85 backdrop-blur-md">
-          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
-            <Link href="/" className="flex items-center gap-2.5" aria-label="PoCW home">
-              <Image src="/logo.png" alt="" width={34} height={34} priority className="h-[34px] w-[34px]" />
-              <span className="font-display text-lg font-bold tracking-tight">PoCW</span>
-              <span className="hidden text-sm text-mute md:inline">Proof of Cognitive Work</span>
-            </Link>
-            <nav aria-label="Page sections" className="flex items-center gap-5 text-sm">
-              <a href="#how-it-works" className="text-mute hover:text-paper">
-                How it works
-              </a>
-              <a href="#fine-print" className="hidden text-mute hover:text-paper sm:inline">
-                What the score means
-              </a>
-            </nav>
-          </div>
-        </header>
-        <main id="main">{children}</main>
+        {children}
       </body>
     </html>
   );

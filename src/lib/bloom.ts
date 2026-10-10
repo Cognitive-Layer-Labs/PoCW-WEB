@@ -14,14 +14,14 @@ export const BLOOM_COLORS: Record<BloomLevel, string> = {
 export const OUTCOME_COLORS = {
   mastered: "#5EE3A1",
   attempted: "#F5B94C",
-  untested: "#5C4E68",
+  untested: "#6B5A7B",
 } as const;
 
 export type Outcome = keyof typeof OUTCOME_COLORS;
 
 export const OUTCOME_LABELS: Record<Outcome, string> = {
   mastered: "Mastered",
-  attempted: "Asked, not mastered",
+  attempted: "Not yet",
   untested: "Not tested",
 };
 
@@ -34,5 +34,5 @@ export function toBloom(value: string | undefined | null): BloomLevel | null {
 
 export function bloomColor(value: string | undefined | null): string {
   const level = toBloom(value);
-  return level ? BLOOM_COLORS[level] : "#AE9FBB";
+  return level ? BLOOM_COLORS[level] : "#B5A6C1";
 }

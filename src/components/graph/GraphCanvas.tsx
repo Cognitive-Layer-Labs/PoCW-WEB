@@ -32,7 +32,10 @@ export interface GraphCanvasProps {
   colorMode: ColorMode;
   matches: Set<string> | null;
   selectedId: string | null;
-  focus: { id: string; nonce: number } | null;
+  /** Center on a node; offsetY (screen px) keeps it clear of a bottom sheet. */
+  focus: { id: string; nonce: number; offsetY?: number } | null;
+  /** Fit padding in screen px. */
+  padding?: number;
   onSelect: (id: string | null) => void;
 }
 
@@ -51,7 +54,7 @@ function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
-export default function GraphCanvas({ graph, nodes, colorMode, matches, selectedId, focus, onSelect }: GraphCanvasProps) {
+export default function GraphCanvas({ graph, nodes, colorMode, matches, selectedId, focus, padding = 40, onSelect }: GraphCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -71,6 +74,32 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Frame the whole map again whenever the viewport changes size (rotation, window
+  // resize, address bar): the old framing is meaningless at the new aspect ratio.
+  const fit = useCallback(
+    (ms: number) => {
+      const fg = fgRef.current;
+      const el = wrapRef.current;
+      if (!fg || !el || size.width === 0) return;
+      fg.zoomToFit(ms, padding);
+      el.dataset.fitSize = `${size.width}x${size.height}`;
+    },
+    [size.width, size.height, padding]
+  );
+  const lastSize = useRef<string | null>(null);
+  useEffect(() => {
+    if (size.width === 0 || size.height === 0) return;
+    const key = `${size.width}x${size.height}`;
+    if (lastSize.current === null) {
+      lastSize.current = key; // first layout: the engine-tick fit below handles it
+      return;
+    }
+    if (lastSize.current === key) return;
+    lastSize.current = key;
+    const t = setTimeout(() => fit(reducedMotion ? 0 : 250), 120);
+    return () => clearTimeout(t);
+  }, [size.width, size.height, fit, reducedMotion]);
 
   // Build the simulation data once per graph; colors/highlights are read at draw time.
   const data = useMemo(() => {
@@ -116,8 +145,9 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
     const node = data.nodes.find((n) => n.id === focus.id);
     const fg = fgRef.current;
     if (!node || !fg || node.x == null || node.y == null) return;
-    fg.centerAt(node.x, node.y, reducedMotion ? 0 : 500);
-    fg.zoom(Math.max(fg.zoom(), 2.4), reducedMotion ? 0 : 500);
+    const k = Math.max(fg.zoom(), 2.4);
+    fg.zoom(k, reducedMotion ? 0 : 500);
+    fg.centerAt(node.x, node.y + (focus.offsetY ?? 0) / k, reducedMotion ? 0 : 500);
   }, [focus, data, reducedMotion]);
 
   // Always label the most central concepts so the graph reads at any zoom.
@@ -151,7 +181,7 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
 
       if (id === selectedId || (matches?.has(id) ?? false)) {
         ctx.lineWidth = 2 / scale;
-        ctx.strokeStyle = id === selectedId ? "#F0389E" : "#F4EDF8";
+        ctx.strokeStyle = id === selectedId ? "#F0579B" : "#F6EFF3";
         ctx.beginPath();
         ctx.arc(x, y, r + 3 / scale + 1, 0, 2 * Math.PI);
         ctx.stroke();
@@ -176,9 +206,9 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
         ctx.textBaseline = "top";
         ctx.lineJoin = "round";
         ctx.lineWidth = 3.5;
-        ctx.strokeStyle = "rgba(16,9,22,0.92)";
+        ctx.strokeStyle = "rgba(20,11,28,0.92)";
         ctx.strokeText(label, 0, 3);
-        ctx.fillStyle = "#F4EDF8";
+        ctx.fillStyle = "#F6EFF3";
         ctx.fillText(label, 0, 3);
         ctx.restore();
       }
@@ -214,11 +244,11 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
       ctx.font = `600 12px "Atkinson Hyperlegible Next Variable", system-ui, sans-serif`;
       const w = ctx.measureText(text).width;
       const h = 22;
-      ctx.fillStyle = "#F0389E";
+      ctx.fillStyle = "#F0579B";
       ctx.beginPath();
       ctx.roundRect(-w / 2 - 9, -h / 2, w + 18, h, h / 2);
       ctx.fill();
-      ctx.fillStyle = "#150D1C";
+      ctx.fillStyle = "#1B1026";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(text, 0, 1);
@@ -248,7 +278,7 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
           linkLabel={() => ""}
           nodeCanvasObject={drawNode}
           nodePointerAreaPaint={paintPointer}
-          linkColor={(l) => (linkTouchesActive(l) || l === hoverLink ? "rgba(240,56,158,0.9)" : "rgba(174,159,187,0.28)")}
+          linkColor={(l) => (linkTouchesActive(l) || l === hoverLink ? "rgba(240,87,155,0.9)" : "rgba(181,166,193,0.3)")}
           linkWidth={(l) => (linkTouchesActive(l) || l === hoverLink ? 1.8 : 0.9)}
           linkDirectionalArrowLength={3.2}
           linkDirectionalArrowRelPos={1}
@@ -267,11 +297,11 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
             // Frame the warmed-up layout immediately, then again once it settles.
             if (!fitted.current) {
               fitted.current = true;
-              fgRef.current?.zoomToFit(0, 40);
+              fit(0);
             }
           }}
           onEngineStop={() => {
-            if (!userMoved.current) fgRef.current?.zoomToFit(reducedMotion ? 0 : 400, 40);
+            if (!userMoved.current) fit(reducedMotion ? 0 : 400);
           }}
         />
       )}
