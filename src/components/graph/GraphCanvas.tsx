@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D, { type ForceGraphMethods, type LinkObject, type NodeObject } from "react-force-graph-2d";
+import { forceCollide } from "d3-force-3d";
 import { OUTCOME_COLORS, bloomColor, type Outcome } from "@/lib/bloom";
 import type { KnowledgeGraph } from "@/lib/engine";
 
@@ -100,6 +101,12 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
     charge?.strength?.(-160);
     const link = fg.d3Force("link");
     link?.distance?.(46);
+    // Labels are drawn at a fixed screen size, so keep neighbours apart by roughly half a
+    // label's width (≈1.6 graph units per character at the usual fitted zoom).
+    fg.d3Force(
+      "collide",
+      forceCollide<GNode>((n: GNode) => Math.max(radius(n.weight) + 4, Math.min(n.label.length, 38) * 1.6)).iterations(2)
+    );
     fitted.current = false;
   }, [data, size.width > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
