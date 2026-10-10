@@ -1,64 +1,40 @@
 import type { Config } from "tailwindcss";
+import animate from "tailwindcss-animate";
 
 const config: Config = {
-  darkMode: ["class"],
-  content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-  ],
+  content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+        ink: { DEFAULT: "#150D1C", raised: "#1F1529", sunk: "#100916" },
+        line: { DEFAULT: "#3B2D49", strong: "#5A4769" },
+        paper: "#F4EDF8",
+        mute: "#AE9FBB",
+        magenta: { DEFAULT: "#F0389E", deep: "#B4237A", soft: "#F7A3D0" },
+        bloom: {
+          remember: "#6FD6C4",
+          understand: "#7FB4F5",
+          apply: "#A99CF7",
+          analyze: "#D58AF0",
+          evaluate: "#F35FB6",
+          create: "#FF6B6B",
         },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
-        },
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        chart: {
-          "1": "hsl(var(--chart-1))",
-          "2": "hsl(var(--chart-2))",
-          "3": "hsl(var(--chart-3))",
-          "4": "hsl(var(--chart-4))",
-          "5": "hsl(var(--chart-5))",
-        },
+        outcome: { mastered: "#5EE3A1", attempted: "#F5B94C", untested: "#5C4E68" },
       },
-      borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+      fontFamily: {
+        display: ['"Bricolage Grotesque Variable"', "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ['"Atkinson Hyperlegible Next Variable"', "ui-sans-serif", "system-ui", "sans-serif"],
+      },
+      keyframes: {
+        "draw-in": { from: { strokeDashoffset: "1" }, to: { strokeDashoffset: "0" } },
+        pulse_node: { "0%,100%": { opacity: "0.45" }, "50%": { opacity: "1" } },
+      },
+      animation: {
+        "draw-in": "draw-in 1.4s cubic-bezier(.6,0,.2,1) forwards",
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [animate],
 };
 
 export default config;

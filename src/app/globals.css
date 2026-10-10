@@ -1,42 +1,80 @@
+@import "@fontsource-variable/bricolage-grotesque/standard.css";
+@import "@fontsource-variable/atkinson-hyperlegible-next/index.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 240 10% 4%;
-    --foreground: 240 10% 91%;
-    --card: 240 10% 6%;
-    --card-foreground: 240 10% 91%;
-    --popover: 240 10% 6%;
-    --popover-foreground: 240 10% 91%;
-    --primary: 168 100% 48%;
-    --primary-foreground: 240 10% 4%;
-    --secondary: 240 5% 15%;
-    --secondary-foreground: 240 10% 91%;
-    --muted: 240 5% 15%;
-    --muted-foreground: 240 5% 55%;
-    --accent: 43 100% 65%;
-    --accent-foreground: 240 10% 4%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 240 10% 91%;
-    --border: 240 5% 15%;
-    --input: 240 5% 15%;
-    --ring: 168 100% 48%;
-    --radius: 0.5rem;
-    --chart-1: 168 100% 48%;
-    --chart-2: 43 100% 65%;
-    --chart-3: 280 100% 70%;
-    --chart-4: 210 100% 65%;
-    --chart-5: 0 100% 65%;
+    color-scheme: dark;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-ink font-sans text-paper antialiased;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+  }
+  h1, h2, h3 {
+    @apply font-display;
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  ::selection {
+    background: #f0389e;
+    color: #150d1c;
+  }
+  :focus-visible {
+    outline: 2px solid #f0389e;
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
+@layer components {
+  /* The constellation motif: edges draw in when the drop zone is engaged. */
+  .constellation line {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transition: stroke-dashoffset 0.9s cubic-bezier(0.6, 0, 0.2, 1), stroke 0.4s;
   }
-  body {
-    @apply bg-background text-foreground;
+  .constellation[data-state="armed"] line,
+  .constellation[data-state="done"] line {
+    stroke-dashoffset: 0;
+  }
+  .constellation[data-state="working"] line {
+    animation: link-cycle 4.8s cubic-bezier(0.6, 0, 0.2, 1) infinite;
+  }
+  .constellation circle {
+    transition: fill 0.4s, r 0.4s;
+  }
+  .constellation[data-state="working"] circle {
+    animation: node-breathe 2.4s ease-in-out infinite;
+  }
+  @keyframes link-cycle {
+    0% { stroke-dashoffset: 1; }
+    45%, 70% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -1; }
+  }
+  @keyframes node-breathe {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
   }
 }

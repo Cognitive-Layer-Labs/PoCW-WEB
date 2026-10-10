@@ -1,180 +1,111 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  FileUp,
-  BrainCircuit,
-  ShieldCheck,
-  Coins,
-  ArrowRight,
-  Zap,
-  Lock,
-  Globe,
-} from "lucide-react";
+import Image from "next/image";
+import { Workbench } from "@/components/Workbench";
+import { BLOOM_COLORS } from "@/lib/bloom";
 
-const HOW_IT_WORKS = [
+const STEPS = [
   {
-    icon: FileUp,
-    step: "01",
-    title: "Index Your Content",
-    description:
-      "Upload a PDF, webpage, or plain text. The oracle parses and builds a knowledge graph — extracting concepts, relationships, and Bloom's levels.",
-    badge: "Knowledge Graph",
-    color: "text-blue-400",
-    bg: "bg-blue-500/10 border-blue-500/20",
+    title: "Content",
+    body: "Drop a PDF, a text or Markdown file, pasted notes, a web page or a YouTube link. The text is extracted on the server.",
+    color: BLOOM_COLORS.Remember,
   },
   {
-    icon: BrainCircuit,
-    step: "02",
-    title: "Adaptive Testing",
-    description:
-      "Answer 5–15 adaptive questions generated from your document. Difficulty adjusts in real-time via IRT (Item Response Theory) based on your responses.",
-    badge: "IRT Engine",
-    color: "text-purple-400",
-    bg: "bg-purple-500/10 border-purple-500/20",
+    title: "Knowledge graph",
+    body: "A language model pulls out the document's concepts, rates how central each one is, and records how they relate.",
+    color: BLOOM_COLORS.Apply,
   },
   {
-    icon: ShieldCheck,
-    step: "03",
-    title: "Oracle Attestation",
-    description:
-      "Your score is signed by the oracle with ECDSA. The signature covers your wallet address, content ID, score, nonce, and expiry — preventing replay attacks.",
-    badge: "ECDSA Signature",
-    color: "text-teal-400",
-    bg: "bg-teal-500/10 border-teal-500/20",
+    title: "Adaptive questions",
+    body: "Questions target the important concepts. After each answer an Item Response Theory (IRT) model picks how hard the next one should be.",
+    color: BLOOM_COLORS.Analyze,
   },
   {
-    icon: Coins,
-    step: "04",
-    title: "Mint Your SBT",
-    description:
-      "Submit the oracle signature on-chain. The PoCW Controller verifies it and mints a Soulbound Token — permanent, non-transferable proof of comprehension.",
-    badge: "ERC-1155 SBT",
-    color: "text-yellow-400",
-    bg: "bg-yellow-500/10 border-yellow-500/20",
+    title: "Ability estimate",
+    body: "You get a 0 to 100 score with its uncertainty band, the underlying θ estimate, and a map of which concepts you mastered.",
+    color: BLOOM_COLORS.Evaluate,
   },
 ];
 
-const FEATURES = [
+const NOTES = [
   {
-    icon: Zap,
-    title: "Adaptive by design",
-    description: "Questions adjust to your ability level in real time. No fixed question bank.",
+    lead: "A language model grades written answers.",
+    body: "It checks them against key points drawn from your document and explains its call. Multiple-choice and true-or-false answers are checked exactly. Graders can be wrong, so read the feedback.",
   },
   {
-    icon: Lock,
-    title: "Soulbound & permanent",
-    description: "Non-transferable ERC-1155 tokens. Yours forever, on-chain.",
+    lead: "Difficulties are estimated, not calibrated.",
+    body: "The IRT model uses difficulty ratings from the model rather than from thousands of past test-takers. Treat the score as a reading of this document and this session, not a certificate.",
   },
   {
-    icon: Globe,
-    title: "Content-agnostic",
-    description: "Any URL, PDF, or text. Whitepaper, textbook, documentation — all supported.",
+    lead: "Questions only come from what you upload.",
+    body: "If the document is thin, so is the test. A chapter or a long article gives the graph enough to work with.",
+  },
+  {
+    lead: "Uploads are processed and stored by the engine.",
+    body: "That is how the graph and the questions get built. Don't upload anything confidential.",
   },
 ];
 
 export default function Home() {
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 space-y-24">
-      {/* Hero */}
-      <section className="text-center space-y-6 pt-8">
-        <Badge variant="outline" className="text-xs border-primary/40 text-primary px-3 py-1">
-          Demo
-        </Badge>
-        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight">
-          Prove What You Know,{" "}
-          <span className="text-primary">On-Chain</span>
-        </h1>
-        <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          PoCW uses adaptive AI testing and IRT psychometrics to verify knowledge comprehension —
-          then anchors the result to your wallet as a permanent, non-transferable credential.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-          <Button asChild size="lg" className="gap-2 text-base">
-            <Link href="/verify">
-              Start Verification
-              <ArrowRight className="h-5 w-5" />
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="lg" className="text-base">
-            <a
-              href="https://github.com/Cognitive-Layer-Labs/PoCW"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View on GitHub
-            </a>
-          </Button>
+    <>
+      <Workbench />
+
+      <section id="how-it-works" aria-labelledby="how-heading" className="scroll-mt-16 border-t border-line bg-ink-sunk">
+        <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 lg:py-28">
+          <h2 id="how-heading" className="max-w-2xl text-3xl font-semibold leading-tight sm:text-[2.6rem]">
+            From a document to an estimate of what you know
+          </h2>
+          <ol className="relative mt-14 grid gap-10 md:grid-cols-4 md:gap-8">
+            <span
+              aria-hidden="true"
+              className="absolute bottom-3 left-[11px] top-3 w-px bg-gradient-to-b from-bloom-remember via-bloom-analyze to-bloom-evaluate md:bottom-auto md:left-3 md:right-[calc((100%_-_6rem)/4_-_12px)] md:top-[11px] md:h-px md:w-auto md:bg-gradient-to-r"
+            />
+            {STEPS.map((step, i) => (
+              <li key={step.title} className="relative pl-12 md:pl-0 md:pt-12">
+                <span
+                  aria-hidden="true"
+                  className="absolute left-0 top-0 flex h-6 w-6 items-center justify-center rounded-full border-[3px] border-ink-sunk text-[0.7rem] font-bold text-ink"
+                  style={{ background: step.color }}
+                >
+                  {i + 1}
+                </span>
+                <h3 className="text-xl font-semibold">{step.title}</h3>
+                <p className="mt-2 text-mute">{step.body}</p>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
-      {/* Feature pills */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {FEATURES.map(f => {
-          const Icon = f.icon;
-          return (
-            <div
-              key={f.title}
-              className="flex items-start gap-3 p-4 rounded-xl border border-border/60 bg-card/50"
-            >
-              <div className="p-2 rounded-lg bg-primary/10 shrink-0 mt-0.5">
-                <Icon className="h-4 w-4 text-primary" />
+      <section id="fine-print" aria-labelledby="notes-heading" className="scroll-mt-16 border-t border-line">
+        <div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] lg:gap-16 lg:py-28">
+          <div>
+            <h2 id="notes-heading" className="text-3xl font-semibold leading-tight sm:text-[2.6rem]">
+              What the score means, and what it doesn&apos;t
+            </h2>
+            <p className="mt-4 text-mute">PoCW is a quick, honest read on your understanding. Here is what is behind it.</p>
+          </div>
+          <dl className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
+            {NOTES.map((n) => (
+              <div key={n.lead} className="border-l-2 border-magenta/60 pl-5">
+                <dt className="font-semibold text-paper">{n.lead}</dt>
+                <dd className="mt-1.5 text-mute">{n.body}</dd>
               </div>
-              <div>
-                <p className="text-sm font-medium">{f.title}</p>
-                <p className="text-xs text-muted-foreground mt-1">{f.description}</p>
-              </div>
-            </div>
-          );
-        })}
-      </section>
-
-      {/* How it works */}
-      <section className="space-y-8">
-        <div className="text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold">How It Works</h2>
-          <p className="text-muted-foreground mt-2 text-sm">Four steps from content to credential</p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {HOW_IT_WORKS.map(step => {
-            const Icon = step.icon;
-            return (
-              <Card key={step.step} className={`border ${step.bg}`}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-mono text-muted-foreground/60">{step.step}</span>
-                    <Badge variant="outline" className={`text-xs border-current ${step.color}`}>
-                      {step.badge}
-                    </Badge>
-                  </div>
-                  <div className={`p-2.5 rounded-xl ${step.bg} border w-fit mb-2`}>
-                    <Icon className={`h-5 w-5 ${step.color}`} />
-                  </div>
-                  <CardTitle className="text-base">{step.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{step.description}</p>
-                </CardContent>
-              </Card>
-            );
-          })}
+            ))}
+          </dl>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="text-center space-y-4 border border-primary/20 bg-primary/5 rounded-2xl py-12 px-6">
-        <h2 className="text-2xl font-bold">Ready to get verified?</h2>
-        <p className="text-muted-foreground text-sm max-w-sm mx-auto">
-          Connect your wallet, upload a document, and earn your on-chain knowledge credential.
-        </p>
-        <Button asChild size="lg" className="gap-2">
-          <Link href="/verify">
-            Launch Demo <ArrowRight className="h-5 w-5" />
-          </Link>
-        </Button>
-      </section>
-    </div>
+      <footer className="border-t border-line">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 py-10 text-sm text-mute sm:flex-row sm:items-center sm:justify-between sm:px-8">
+          <div className="flex items-center gap-2.5">
+            <Image src="/logo.png" alt="" width={24} height={24} className="h-6 w-6" />
+            <span>
+              <span className="font-semibold text-paper">PoCW</span>, Proof of Cognitive Work
+            </span>
+          </div>
+          <p>Built by Cognitive Layer Labs.</p>
+        </div>
+      </footer>
+    </>
   );
 }
