@@ -114,8 +114,8 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
   }, [focus, data, reducedMotion]);
 
   // Always label the most central concepts so the graph reads at any zoom.
-  const alwaysLabel = useMemo(
-    () => new Set([...nodes].sort((a, b) => b.weight - a.weight).slice(0, 6).map((n) => n.id)),
+  const importanceRank = useMemo(
+    () => new Map([...nodes].sort((a, b) => b.weight - a.weight).map((n, i) => [n.id, i])),
     [nodes]
   );
 
@@ -154,8 +154,8 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
         id === active ||
         activeNeighbours?.has(id) ||
         (matches?.has(id) ?? false) ||
-        alwaysLabel.has(id) ||
-        (colorMode === "outcome" && node.outcome !== "untested") ||
+        (importanceRank.get(id) ?? 99) < (scale >= 1.4 ? 8 : scale >= 0.9 ? 5 : 3) ||
+        (colorMode === "outcome" && node.outcome !== "untested" && scale >= 1.4) ||
         scale > 2.2;
       if (showLabel && !dimmedBySearch) {
         // Draw text at real screen pixels (not a tiny font scaled up) so it stays crisp.
@@ -177,7 +177,7 @@ export default function GraphCanvas({ graph, nodes, colorMode, matches, selected
       }
       ctx.globalAlpha = 1;
     },
-    [active, activeNeighbours, alwaysLabel, colorMode, colorOf, matches, selectedId]
+    [active, activeNeighbours, importanceRank, colorMode, colorOf, matches, selectedId]
   );
 
   const paintPointer = useCallback((node: GNode, color: string, ctx: CanvasRenderingContext2D) => {

@@ -258,7 +258,7 @@ export function GraphDialog({ open, onOpenChange, title, state, outcomes, onRetr
             {/* Side panel: details for the selected concept, or the concept list */}
             {graph && nodes.length > 0 && (
               <aside
-                className="flex max-h-[36%] min-h-0 flex-col border-t border-line bg-ink lg:max-h-none lg:w-[22rem] lg:border-l lg:border-t-0"
+                className="flex max-h-[32%] min-h-0 flex-col border-t border-line bg-ink lg:max-h-none lg:w-[22rem] lg:border-l lg:border-t-0"
                 aria-label={selected ? `Details for ${selected.label}` : "Concepts"}
               >
                 {selected ? (

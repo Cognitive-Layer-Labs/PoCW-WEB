@@ -345,8 +345,8 @@ export function Workbench() {
       const waited = phase.name === "indexing" ? now - phase.since : 0;
       const next = phase.name === "indexing" ? Math.max(0, Math.ceil((phase.nextCheck - now) / 1000)) : null;
       panel = (
-        <div className="relative flex min-h-[19rem] flex-col justify-end overflow-hidden rounded-[28px] border-2 border-magenta/60 bg-ink-raised/60 px-6 pb-7 pt-4 sm:min-h-[22rem]">
-          <Constellation state="working" className="pointer-events-none absolute inset-x-6 top-5 h-[58%] w-[calc(100%-3rem)]" />
+        <div className="relative flex min-h-[19rem] flex-col justify-end gap-4 overflow-hidden rounded-[28px] border-2 border-magenta/60 bg-ink-raised/60 px-6 pb-7 pt-5 sm:min-h-[22rem]">
+          <Constellation state="working" className="pointer-events-none h-36 w-full sm:h-48" />
           <div className="relative" aria-live="polite">
             <p className="font-display text-2xl font-semibold leading-tight sm:text-[1.7rem]">
               {phase.name === "sending" ? "Sending your document…" : "Mapping the ideas…"}
