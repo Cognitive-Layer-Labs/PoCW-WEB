@@ -15,6 +15,8 @@ import {
   type Book,
 } from "@/lib/server/repo";
 import { saveOriginal } from "@/lib/server/uploads";
+import { now } from "@/lib/server/db";
+import { normalizeKeyPoints } from "@/lib/keypoints";
 
 /**
  * Same-origin proxy to the PoCW engine.
@@ -420,7 +422,11 @@ async function handleAnswer(request: NextRequest, user: User, sessionId: string)
         score: typeof fb.score === "number" ? fb.score : fb.correct === true ? 100 : 0,
         reasoning: str(fb.reasoning)?.slice(0, 4000),
         correctAnswer: str(fb.correctAnswer)?.slice(0, 500),
-        keyPoints: Array.isArray(fb.referenceKeyPoints) ? (fb.referenceKeyPoints as unknown[]).map(String).slice(0, 12) : undefined,
+        referencePoints: Array.isArray(fb.referenceKeyPoints) ? (fb.referenceKeyPoints as unknown[]).map(String).slice(0, 12) : undefined,
+        keyPoints: normalizeKeyPoints(fb.keyPoints),
+        modelAnswer: str(fb.modelAnswer)?.trim().slice(0, 2000) || undefined,
+        gradedBy: fb.gradedBy === "jev" || fb.gradedBy === "llm" ? fb.gradedBy : undefined,
+        answeredAt: now(),
       },
       fb.isComplete === true ? null : (fb.nextQuestion ?? null)
     );

@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Check, RotateCcw, Waypoints, X } from "lucide-react";
+import { ArrowLeft, RotateCcw, Waypoints } from "lucide-react";
+import { AttemptReview } from "@/components/AttemptReview";
 import { ScoreScale } from "@/components/ScoreScale";
 import { ShareButton } from "@/components/ShareButton";
 import { buttonVariants } from "@/components/ui/button";
 import { requireUser } from "@/lib/server/auth";
-import { attemptForUser, bookForUser, type Attempt, type TranscriptItem } from "@/lib/server/repo";
+import { attemptForUser, bookForUser } from "@/lib/server/repo";
 import { LEVEL_BARS, LEVEL_LABELS, band, dateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -15,88 +16,11 @@ export const metadata: Metadata = { title: "Your result" };
 
 type Props = { params: Promise<{ id: string }> };
 
-const TYPE_LABEL: Record<string, string> = { open: "Written", mcq: "Multiple choice", true_false: "True or false" };
-
 const DISCLAIMER_TITLES: Record<string, string> = {
   irtCalibration: "About the score",
   bloomMapping: "About question levels",
   thresholdSemantics: "About the pass bar",
 };
-
-const cleanOption = (o: string) => o.replace(/^\s*[A-Da-d][).:\]]\s+/, "");
-
-/** Turns what was sent ("B", "true") back into what the reader saw. */
-function shownAnswer(item: TranscriptItem): string {
-  if (item.type === "mcq" && item.options && /^[A-Da-d]$/.test(item.answer.trim())) {
-    const i = item.answer.trim().toUpperCase().charCodeAt(0) - 65;
-    if (item.options[i]) return `${item.answer.trim().toUpperCase()}. ${cleanOption(item.options[i])}`;
-  }
-  if (item.type === "true_false") return item.answer.trim().toLowerCase() === "true" ? "True" : item.answer.trim().toLowerCase() === "false" ? "False" : item.answer;
-  return item.answer;
-}
-
-function shownCorrect(item: TranscriptItem): string | null {
-  const c = item.correctAnswer?.trim();
-  if (!c) return null;
-  if (item.type === "mcq" && item.options && /^[A-Da-d]$/.test(c)) {
-    const i = c.toUpperCase().charCodeAt(0) - 65;
-    if (item.options[i]) return `${c.toUpperCase()}. ${cleanOption(item.options[i])}`;
-  }
-  if (item.type === "true_false") return c.toLowerCase() === "true" ? "True" : c.toLowerCase() === "false" ? "False" : c;
-  return c;
-}
-
-function Review({ attempt }: { attempt: Attempt }) {
-  const items: TranscriptItem[] =
-    attempt.transcript.length > 0
-      ? [...attempt.transcript].sort((a, b) => a.number - b.number)
-      : attempt.responseDetail.map((d, i) => ({ number: i + 1, question: d.question, type: d.type, answer: "", correct: d.correct, score: d.score }));
-  if (items.length === 0) return null;
-  return (
-    <section aria-labelledby="review-heading">
-      <h2 id="review-heading" className="text-2xl font-semibold">
-        Question by question
-      </h2>
-      <ol className="mt-4 flex flex-col divide-y divide-line border-y border-line">
-        {items.map((it) => {
-          const correct = shownCorrect(it);
-          return (
-            <li key={it.number} className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 py-5">
-              <span
-                className={cn(
-                  "mt-0.5 flex h-7 w-7 items-center justify-center rounded-full",
-                  it.correct ? "bg-outcome-mastered/15 text-outcome-mastered" : "bg-outcome-attempted/15 text-outcome-attempted"
-                )}
-              >
-                {it.correct ? <Check className="h-4 w-4" aria-label="Correct" /> : <X className="h-4 w-4" aria-label="Not quite" />}
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm text-mute">
-                  {it.number}. {TYPE_LABEL[it.type] ?? it.type}
-                  {it.type === "open" && <span className="tabular-nums">, graded {Math.round(it.score)}/100</span>}
-                </p>
-                <p className="mt-1 font-serif text-lg leading-snug text-paper">{it.question}</p>
-                {it.answer && (
-                  <p className="mt-2 break-words text-paper/90">
-                    <span className="text-mute">You answered: </span>
-                    {shownAnswer(it)}
-                  </p>
-                )}
-                {!it.correct && correct && it.type !== "open" && (
-                  <p className="mt-1 text-paper/90">
-                    <span className="text-mute">Correct answer: </span>
-                    {correct}
-                  </p>
-                )}
-                {it.reasoning && <p className="mt-2 text-sm text-mute">{it.reasoning}</p>}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </section>
-  );
-}
 
 export default async function AttemptPage({ params }: Props) {
   const { id } = await params;
@@ -202,7 +126,7 @@ export default async function AttemptPage({ params }: Props) {
       )}
 
       <div className="mt-12">
-        <Review attempt={attempt} />
+        <AttemptReview attempt={attempt} />
       </div>
 
       {disclaimers.length > 0 && (

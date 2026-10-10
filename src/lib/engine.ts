@@ -41,8 +41,16 @@ export interface AnswerFeedback {
   correct: boolean;
   /** 0-100 */
   score: number;
+  /** For written answers on newer engines, a short line derived from keyPoints. */
   reasoning: string;
+  /** What a full answer covers (older engines; no per-point verdict). */
   referenceKeyPoints?: string[];
+  /** Written answers: each key point and whether the answer covered it (newer engines). */
+  keyPoints?: Array<{ point: string; status: "covered" | "partial" | "missing" }>;
+  /** Written answers: a short complete answer, generated with the question (newer engines). */
+  modelAnswer?: string;
+  /** Which grader decided (admin and debugging only; never shown to readers). */
+  gradedBy?: "jev" | "llm";
   correctAnswer?: string;
   progress?: { questionNumber: number; theta: number; se: number; bloomLevel: string };
   isComplete: boolean;

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { db, now } from "./db";
+import { normalizeKeyPoints, type KeyPoint } from "@/lib/keypoints";
 
 /** Data access for books, attempts, shares and the admin view. */
 
@@ -55,7 +56,16 @@ export interface TranscriptItem {
   score: number;
   reasoning?: string;
   correctAnswer?: string;
-  keyPoints?: string[];
+  /** What a full answer covers, without a verdict (engines before key-point grading). */
+  referencePoints?: string[];
+  /** Per-point verdicts for a written answer. */
+  keyPoints?: KeyPoint[];
+  /** A short complete answer, generated with the question. */
+  modelAnswer?: string;
+  /** Which grader decided (admin only). */
+  gradedBy?: "jev" | "llm";
+  /** When the answer was graded, ISO UTC. Recorded from October 2026 on. */
+  answeredAt?: string;
 }
 
 export interface ResponseDetail {
@@ -119,6 +129,28 @@ function toBook(r: any): Book {
   };
 }
 
+/**
+ * Older transcripts stored the engine's reference key points (plain strings) under
+ * `keyPoints`; newer ones store per-point verdicts there. Normalise both.
+ */
+function toTranscript(value: unknown): TranscriptItem[] {
+  const list = parse<any[]>(value, []);
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((x) => x && typeof x === "object")
+    .map((x) => {
+      const item = { ...x } as TranscriptItem & { keyPoints?: unknown };
+      if (Array.isArray(x.keyPoints) && x.keyPoints.every((p: unknown) => typeof p === "string")) {
+        item.referencePoints = item.referencePoints ?? (x.keyPoints as string[]);
+        delete item.keyPoints;
+      } else {
+        item.keyPoints = normalizeKeyPoints(x.keyPoints);
+        if (!item.keyPoints) delete item.keyPoints;
+      }
+      return item as TranscriptItem;
+    });
+}
+
 function toAttempt(r: any): Attempt {
   const detail = parse<{ items?: ResponseDetail[]; disclaimers?: Record<string, string> }>(r.response_detail, {});
   return {
@@ -138,7 +170,7 @@ function toAttempt(r: any): Attempt {
     questionsAsked: r.questions_asked,
     concepts: parse<ConceptOutcome[]>(r.concepts, []),
     responseDetail: detail.items ?? [],
-    transcript: parse<TranscriptItem[]>(r.transcript, []),
+    transcript: toTranscript(r.transcript),
     disclaimers: detail.disclaimers ?? {},
   };
 }
@@ -287,6 +319,12 @@ export function attemptBySession(userId: number, sessionId: string): Attempt | n
 
 export function attemptForUser(userId: number, attemptId: number): Attempt | null {
   const row = db().prepare("SELECT * FROM attempts WHERE id = ? AND user_id = ?").get(attemptId, userId);
+  return row ? toAttempt(row) : null;
+}
+
+/** Any reader's attempt, for the admin review. Callers must check isAdmin first. */
+export function attemptById(attemptId: number): Attempt | null {
+  const row = db().prepare("SELECT * FROM attempts WHERE id = ?").get(attemptId);
   return row ? toAttempt(row) : null;
 }
 

@@ -2,8 +2,10 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, Loader2, X } from "lucide-react";
+import { HalfDisk, KeyPointList } from "@/components/KeyPointList";
 import { Button } from "@/components/ui/button";
 import type { AnswerFeedback, VerifyQuestion } from "@/lib/engine";
+import { normalizeKeyPoints, summarizeKeyPoints } from "@/lib/keypoints";
 import { cn } from "@/lib/utils";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -204,45 +206,7 @@ export function QuestionView({ question, total, feedback, submittedAnswer, busy,
         )}
       </form>
 
-      <div aria-live="polite">
-        {feedback && (
-          <div
-            data-testid="feedback"
-            className={cn(
-              "rounded-2xl border p-5",
-              feedback.correct ? "border-outcome-mastered/50 bg-outcome-mastered/[0.06]" : "border-outcome-attempted/50 bg-outcome-attempted/[0.06]"
-            )}
-          >
-            <h3 ref={feedbackRef} tabIndex={-1} className="flex items-center gap-2 font-serif text-xl font-semibold outline-none">
-              {feedback.correct ? (
-                <Check className="h-5 w-5 text-outcome-mastered" aria-hidden="true" />
-              ) : (
-                <X className="h-5 w-5 text-outcome-attempted" aria-hidden="true" />
-              )}
-              {feedback.correct ? "Correct" : "Not quite"}
-              {question.type === "open" && (
-                <span className="ml-auto font-sans text-sm font-normal tabular-nums text-mute">Graded {Math.round(feedback.score)}/100</span>
-              )}
-            </h3>
-            {feedback.reasoning && <p className="mt-2 text-paper/90">{feedback.reasoning}</p>}
-            {!feedback.correct && feedback.correctAnswer && question.type !== "open" && (
-              <p className="mt-2 text-sm text-mute">
-                Correct answer: <span className="font-semibold text-paper">{feedback.correctAnswer}</span>
-              </p>
-            )}
-            {feedback.referenceKeyPoints && feedback.referenceKeyPoints.length > 0 && (
-              <details className="mt-3 text-sm">
-                <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-ribbon-soft">What a full answer covers</summary>
-                <ul className="mt-1 list-disc space-y-1 pl-5 text-paper/85">
-                  {feedback.referenceKeyPoints.map((p, i) => (
-                    <li key={i}>{p}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </div>
-        )}
-      </div>
+      <div aria-live="polite">{feedback && <Feedback feedback={feedback} type={question.type} headingRef={feedbackRef} />}</div>
 
       {/* Action bar: sticks to the bottom of the screen (above the keyboard) on phones. */}
       <div
@@ -261,6 +225,72 @@ export function QuestionView({ question, total, feedback, submittedAnswer, busy,
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * What the reader sees after answering. Written answers on newer engines get a
+ * key-point checklist and a model answer; otherwise the score and the grader's reasoning.
+ */
+function Feedback({ feedback, type, headingRef }: { feedback: AnswerFeedback; type: string; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
+  const points = type === "open" ? normalizeKeyPoints(feedback.keyPoints) : undefined;
+  const summary = points ? summarizeKeyPoints(points, feedback.correct) : null;
+  const modelAnswer = type === "open" && typeof feedback.modelAnswer === "string" ? feedback.modelAnswer.trim() : "";
+  const full = summary ? summary.covered === summary.total : feedback.correct;
+  const partly = summary ? !full && summary.covered + summary.partial > 0 : false;
+  const good = summary ? full || feedback.correct : feedback.correct;
+  const half = !full && (partly || (!!summary && feedback.correct));
+
+  return (
+    <div
+      data-testid="feedback"
+      className={cn(
+        "rounded-2xl border p-5",
+        good ? "border-outcome-mastered/50 bg-outcome-mastered/[0.06]" : "border-outcome-attempted/50 bg-outcome-attempted/[0.06]"
+      )}
+    >
+      <h3 ref={headingRef} tabIndex={-1} className="flex flex-wrap items-center gap-x-2 gap-y-1 font-serif text-xl font-semibold outline-none">
+        {half ? (
+          <HalfDisk ring className={cn("h-5 w-5", good ? "text-outcome-mastered" : "text-outcome-attempted")} />
+        ) : full ? (
+          <Check className={cn("h-5 w-5", good ? "text-outcome-mastered" : "text-outcome-attempted")} aria-hidden="true" />
+        ) : (
+          <X className="h-5 w-5 text-outcome-attempted" aria-hidden="true" />
+        )}
+        {summary ? summary.verdict : feedback.correct ? "Correct" : "Not quite"}
+        {summary ? (
+          <span className="ml-auto font-sans text-sm font-normal tabular-nums text-mute">{summary.tally}</span>
+        ) : (
+          type === "open" && <span className="ml-auto font-sans text-sm font-normal tabular-nums text-mute">Graded {Math.round(feedback.score)}/100</span>
+        )}
+      </h3>
+      {summary ? (
+        <KeyPointList points={points!} className="mt-3" />
+      ) : (
+        feedback.reasoning && <p className="mt-2 text-paper/90">{feedback.reasoning}</p>
+      )}
+      {!feedback.correct && feedback.correctAnswer && type !== "open" && (
+        <p className="mt-2 text-sm text-mute">
+          Correct answer: <span className="font-semibold text-paper">{feedback.correctAnswer}</span>
+        </p>
+      )}
+      {modelAnswer && (
+        <div className="mt-4 border-t border-line pt-3">
+          <p className="text-sm font-semibold text-paper">A full answer:</p>
+          <p className="mt-1 text-paper/90">{modelAnswer}</p>
+        </div>
+      )}
+      {!summary && !modelAnswer && feedback.referenceKeyPoints && feedback.referenceKeyPoints.length > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-ribbon-soft">What a full answer covers</summary>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-paper/85">
+            {feedback.referenceKeyPoints.map((p, i) => (
+              <li key={i}>{p}</li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }
