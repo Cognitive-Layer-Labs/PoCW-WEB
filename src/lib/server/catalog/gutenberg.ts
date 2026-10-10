@@ -198,7 +198,8 @@ function mappedOnBookmap(ids: number[]): Set<number> {
 export function matchGutenberg(work: WorkToMatch): GutenbergBook | null {
   const keys = new Set(work.titles.flatMap((t) => [mainKey(t), titleKey(t)]).filter(Boolean));
   if (keys.size === 0) return null;
-  const surnames = work.authors.map(surname).filter(Boolean);
+  // The first author only: adaptations list the adapter first and the original author after.
+  const surnames = work.authors.slice(0, 1).map(surname).filter(Boolean);
   const byAuthor = (b: GutenbergBook) => surnames.length === 0 || b.surnames.some((s) => surnames.some((t) => sameSurname(s, t)));
   const byTitle = (b: GutenbergBook) => keys.has(mainKey(b.title)) || keys.has(titleKey(b.title));
 

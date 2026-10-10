@@ -80,21 +80,30 @@ ${SLOTS.map(([x, y, r], i) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${colo
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
-const COVER_HOSTS = new Set(["covers.openlibrary.org", "www.gutenberg.org"]);
+/** Where covers are served from: Open Library redirects to archive.org and then an ia*.us.archive.org node. */
+const coverHost = (host: string) =>
+  host === "covers.openlibrary.org" || host === "www.gutenberg.org" || host === "archive.org" || /^[a-z0-9-]+\.us\.archive\.org$/.test(host);
 
 /**
- * A book's real cover as a data URI for an Open Graph image, or null. Only the catalog's cover
- * hosts are fetched (Open Library redirects to archive.org), with a timeout and a size cap.
+ * A book's real cover as a data URI for an Open Graph image, or null. Redirects are followed by
+ * hand and every hop must be one of the cover hosts; timeout and size cap.
  */
 export async function coverDataUri(url: string | null): Promise<string | null> {
   if (!url) return null;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:" || !COVER_HOSTS.has(parsed.hostname)) return null;
-    const res = await fetch(parsed, {
-      headers: { "user-agent": "Bookmap/1.0 (+https://bookmap.baghici.com)" },
-      signal: AbortSignal.timeout(5000),
-    });
+    const signal = AbortSignal.timeout(5000);
+    let target = new URL(url);
+    let res: Response | null = null;
+    for (let hop = 0; hop < 4; hop++) {
+      if (target.protocol !== "https:" || !coverHost(target.hostname)) return null;
+      res = await fetch(target, { headers: { "user-agent": "Bookmap/1.0 (+https://bookmap.baghici.com)" }, redirect: "manual", signal });
+      const next = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+      if (!next) break;
+      await res.body?.cancel().catch(() => undefined);
+      target = new URL(next, target);
+      res = null;
+    }
+    if (!res) return null;
     const type = (res.headers.get("content-type") || "").split(";")[0].trim();
     if (!res.ok || (type !== "image/jpeg" && type !== "image/png")) return null;
     const buf = Buffer.from(await res.arrayBuffer());

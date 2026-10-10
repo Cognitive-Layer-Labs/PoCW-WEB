@@ -41,6 +41,7 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
   const cache = useRef(new Map<string, CatalogItem[]>());
   const controller = useRef<AbortController | null>(null);
   const boundHeading = useRef<HTMLHeadingElement>(null);
+  const alertRef = useRef<HTMLParagraphElement>(null);
   const top = useRef<HTMLDivElement>(null);
 
   // Lists not cached on the server yet (first minutes after a deploy): fetch them.
@@ -96,6 +97,11 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
   }, [query]);
 
   useEffect(() => () => controller.current?.abort(), []);
+
+  // A "Map & test" from a shelf far down the page: bring the error into view.
+  useEffect(() => {
+    if (problem) alertRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [problem]);
 
   useEffect(() => {
     if (bound) {
@@ -236,7 +242,7 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
       </form>
 
       {problem && (
-        <p role="alert" className="mt-4 max-w-3xl rounded-2xl border border-danger/50 bg-danger/[0.07] px-4 py-3">
+        <p ref={alertRef} role="alert" className="mt-4 max-w-3xl rounded-2xl border border-danger/50 bg-danger/[0.07] px-4 py-3">
           {problem}
         </p>
       )}
