@@ -57,7 +57,7 @@ export interface ResponseDetail {
   difficulty: number;
   bloomLevel: string;
   correct: boolean;
-  conceptId?: string;
+  conceptId?: string | null;
 }
 
 export interface ConceptOutcome {
@@ -166,6 +166,15 @@ async function call(path: string, init: RequestInit, fallback: string): Promise<
   return res;
 }
 
+/** Parse a JSON body; a proxy error page or truncated body becomes a readable EngineError. */
+async function json<T>(res: Response): Promise<T> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new EngineError("The engine sent an unexpected response. Try again in a moment.", res.status);
+  }
+}
+
 function retryAfterMs(res: Response): number {
   const seconds = Number(res.headers.get("retry-after"));
   if (!Number.isFinite(seconds) || seconds <= 0) return 5000;
@@ -179,7 +188,10 @@ export interface IndexPoll {
 }
 
 async function asPoll(res: Response): Promise<IndexPoll> {
-  const status = (await res.json()) as IndexStatus;
+  const status = await json<IndexStatus>(res);
+  if (!status || typeof status.status !== "string") {
+    throw new EngineError("The engine sent an unexpected response. Try again in a moment.", res.status);
+  }
   return status.status === "ready" ? { status } : { status, retryAfterMs: retryAfterMs(res) };
 }
 
@@ -210,8 +222,12 @@ export async function getIndexStatus(knowledgeId: string): Promise<IndexPoll> {
 
 export async function getGraph(knowledgeId: string): Promise<KnowledgeGraph> {
   const res = await call(`graph/${encodeURIComponent(knowledgeId)}`, { method: "GET" }, "Loading the graph failed");
-  const graph = (await res.json()) as KnowledgeGraph;
-  return { ...graph, nodes: graph.nodes ?? [], edges: graph.edges ?? [] };
+  const graph = await json<KnowledgeGraph>(res);
+  return {
+    ...graph,
+    nodes: Array.isArray(graph?.nodes) ? graph.nodes : [],
+    edges: Array.isArray(graph?.edges) ? graph.edges : [],
+  };
 }
 
 export async function startTest(knowledgeId: string, settings: TestSettings): Promise<StartResponse> {
@@ -235,7 +251,18 @@ export async function startTest(knowledgeId: string, settings: TestSettings): Pr
     },
     "Starting the test failed"
   );
-  return res.json();
+  const body = await json<StartResponse & { error?: string; code?: string }>(res);
+  // 202 = the document is still being indexed (INDEXING_IN_PROGRESS), no session yet.
+  if (res.status !== 200 || !body?.sessionId || !body.question) {
+    throw new EngineError(
+      body?.code === "INDEXING_IN_PROGRESS"
+        ? "That document is still being mapped. Try again in a few seconds."
+        : body?.error || "The test couldn't start. Try again.",
+      res.status,
+      body?.code
+    );
+  }
+  return body;
 }
 
 export async function submitAnswer(sessionId: string, answer: string): Promise<AnswerFeedback> {
@@ -244,12 +271,12 @@ export async function submitAnswer(sessionId: string, answer: string): Promise<A
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answer }) },
     "Sending your answer failed"
   );
-  return res.json();
+  return json<AnswerFeedback>(res);
 }
 
 export async function getResult(sessionId: string): Promise<PoCWResult> {
   const res = await call(`verify/${encodeURIComponent(sessionId)}/result`, { method: "GET" }, "Loading results failed");
-  return res.json();
+  return json<PoCWResult>(res);
 }
 
 // ─── Client-side validation ──────────────────────────────────────────────────

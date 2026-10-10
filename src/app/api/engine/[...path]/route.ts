@@ -59,11 +59,21 @@ function hasUnsafePath(request: NextRequest, segments: string[]): boolean {
   );
 }
 
+/**
+ * Client IP for the engine's per-IP rate limit. Uses the right-most
+ * X-Forwarded-For entry: that one is written by our own reverse proxy (Caddy
+ * replaces the header, nginx-style proxies append), while anything to its left
+ * is client-controlled and would let a caller pick a fresh rate-limit bucket
+ * on every request.
+ */
 function clientIp(request: NextRequest): string | null {
-  const forwarded = request.headers.get("x-forwarded-for");
-  const first = forwarded?.split(",")[0]?.trim();
-  if (first) return first;
-  return request.headers.get("x-real-ip")?.trim() || null;
+  const hops = (request.headers.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((h) => h.trim())
+    .filter(Boolean);
+  const last = hops[hops.length - 1];
+  if (last && last.length <= 64) return last;
+  return null;
 }
 
 /** Read the request body, giving up as soon as it exceeds the limit. */

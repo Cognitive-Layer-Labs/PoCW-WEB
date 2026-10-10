@@ -88,6 +88,8 @@ export function Workbench() {
   const [now, setNow] = useState(() => Date.now());
   const topRef = useRef<HTMLDivElement>(null);
   const run = useRef(0); // bumps on every reset so stale async work is dropped
+  const inFlight = useRef(false); // one start/answer/result request at a time (double-click, Ctrl+Enter twice)
+  const graphRequested = useRef(new Set<string>()); // StrictMode runs effects twice: fetch each graph once
 
   // ── Persistence (best effort) ────────────────────────────────────────────
   useEffect(() => {
@@ -110,6 +112,7 @@ export function Workbench() {
 
   // ── Graph loading (for the concept count and the graph view) ─────────────
   const loadGraph = useCallback((id: string) => {
+    graphRequested.current.add(id);
     setGraphs((g) => ({ ...g, [id]: { status: "loading" } }));
     getGraph(id)
       .then((graph) => setGraphs((g) => ({ ...g, [id]: { status: "ready", graph } })))
@@ -122,13 +125,14 @@ export function Workbench() {
   }, []);
 
   useEffect(() => {
-    if (!knowledgeId || phase.name === "indexing" || graphs[knowledgeId]) return;
+    if (!knowledgeId || phase.name === "indexing" || graphs[knowledgeId] || graphRequested.current.has(knowledgeId)) return;
     loadGraph(knowledgeId);
   }, [knowledgeId, phase.name, graphs, loadGraph]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const reset = useCallback((message: string | null = null) => {
     run.current += 1;
+    inFlight.current = false;
     setBusy(false);
     setGraphOpen(false);
     setProblem(message);
@@ -211,16 +215,23 @@ export function Workbench() {
     checkedRestore.current = true;
     if (phase.name !== "ready") return;
     const id = phase.doc.knowledgeId;
-    getIndexStatus(id).catch((err) => {
-      if (err instanceof EngineError && err.gone) reset("That document is no longer on the engine. Drop it again to start over.");
-    });
-  }, [restored, phase, reset]);
+    const token = run.current;
+    getIndexStatus(id)
+      .then((poll) => {
+        if (token === run.current && poll.status.status !== "ready") applyPoll(poll, phase.doc);
+      })
+      .catch((err) => {
+        if (token === run.current && err instanceof EngineError && err.gone)
+          reset("That document is no longer on the engine. Drop it again to start over.");
+      });
+  }, [restored, phase, reset, applyPoll]);
 
   // ── Test flow ────────────────────────────────────────────────────────────
   async function handleStart(settings: TestSettings) {
-    if (phase.name !== "ready" && phase.name !== "results") return;
+    if ((phase.name !== "ready" && phase.name !== "results") || inFlight.current) return;
     const current = phase.doc;
     const token = run.current;
+    inFlight.current = true;
     setLastSettings(settings);
     setBusy(true);
     setProblem(null);
@@ -244,14 +255,18 @@ export function Workbench() {
       if (err instanceof EngineError && err.gone) reset("That document is no longer on the engine. Drop it again to start over.");
       else setProblem(err instanceof Error ? err.message : "The test couldn't start.");
     } finally {
-      if (token === run.current) setBusy(false);
+      if (token === run.current) {
+        inFlight.current = false;
+        setBusy(false);
+      }
     }
   }
 
   async function handleAnswer(answer: string, display: string) {
-    if (phase.name !== "testing") return;
+    if (phase.name !== "testing" || phase.feedback || inFlight.current) return;
     const p = phase;
     const token = run.current;
+    inFlight.current = true;
     setBusy(true);
     setProblem(null);
     try {
@@ -275,12 +290,15 @@ export function Workbench() {
         setProblem("This test session expired. Start a new one when you're ready.");
       } else setProblem(err instanceof Error ? err.message : "Your answer couldn't be sent. Try again.");
     } finally {
-      if (token === run.current) setBusy(false);
+      if (token === run.current) {
+        inFlight.current = false;
+        setBusy(false);
+      }
     }
   }
 
   async function handleContinue() {
-    if (phase.name !== "testing" || !phase.feedback) return;
+    if (phase.name !== "testing" || !phase.feedback || inFlight.current) return;
     const p = phase;
     const fb = phase.feedback;
     if (!fb.isComplete && fb.nextQuestion) {
@@ -289,10 +307,9 @@ export function Workbench() {
       scrollTop();
       return;
     }
-    if (!fb.isComplete) {
-      setProblem("The engine didn't send another question. Try finishing the test again.");
-    }
+    // Complete (or the engine sent no next question): fetch the final result.
     const token = run.current;
+    inFlight.current = true;
     setBusy(true);
     setProblem(null);
     try {
@@ -307,7 +324,10 @@ export function Workbench() {
         setProblem("This test session expired before the results were saved. Start a new one when you're ready.");
       } else setProblem(err instanceof Error ? err.message : "Your results couldn't be loaded. Try again.");
     } finally {
-      if (token === run.current) setBusy(false);
+      if (token === run.current) {
+        inFlight.current = false;
+        setBusy(false);
+      }
     }
   }
 
@@ -423,7 +443,19 @@ export function Workbench() {
               <span className="text-paper">{doc ? docTitle(doc) : ""}</span>
             </p>
             {phase.name === "testing" && (
-              <Button variant="ghost" size="sm" className="px-0" onClick={() => setPhase({ name: "ready", doc: phase.doc })}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="px-0"
+                onClick={() => {
+                  // Drop any answer still in flight so it can't pull us back into the test.
+                  run.current += 1;
+                  inFlight.current = false;
+                  setBusy(false);
+                  setProblem(null);
+                  setPhase({ name: "ready", doc: phase.doc });
+                }}
+              >
                 Leave the test
               </Button>
             )}

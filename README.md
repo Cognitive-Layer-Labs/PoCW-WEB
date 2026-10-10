@@ -11,7 +11,7 @@ Next.js 15 (App Router) · Tailwind 3 · Radix Dialog · `react-force-graph-2d` 
 ```
 browser ──► /api/engine/<path>  (this app, route handler)
                  │  adds Authorization: Bearer $ENGINE_API_KEY
-                 │  forwards X-Forwarded-For (first IP), body ≤ 10 MB, 120 s timeout
+                 │  forwards X-Forwarded-For (right-most entry, set by the reverse proxy), body ≤ 10 MB, 120 s timeout
                  ▼
             $ENGINE_URL/api/<path>  (PoCW engine, never exposed publicly)
 ```
