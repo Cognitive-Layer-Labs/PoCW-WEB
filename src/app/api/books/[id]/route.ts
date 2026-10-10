@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { appOrigin, currentUser } from "@/lib/server/auth";
-import { deleteBook } from "@/lib/server/repo";
+import { bookForUser, deleteBook } from "@/lib/server/repo";
+import { removeOriginalIfUnused } from "@/lib/server/uploads";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,6 +15,8 @@ export async function DELETE(request: NextRequest, context: Context): Promise<Ne
   const origin = request.headers.get("origin");
   if (origin && origin !== appOrigin()) return NextResponse.json({ error: "Cross-site request refused" }, { status: 403 });
   const { id } = await context.params;
-  const ok = /^\d{1,12}$/.test(id) && deleteBook(user.id, Number(id));
+  const book = /^\d{1,12}$/.test(id) ? bookForUser(user.id, Number(id)) : null;
+  const ok = !!book && deleteBook(user.id, book.id);
+  if (ok) await removeOriginalIfUnused(book.storedFile);
   return ok ? new NextResponse(null, { status: 204 }) : NextResponse.json({ error: "Not found", code: "NOT_FOUND" }, { status: 404 });
 }

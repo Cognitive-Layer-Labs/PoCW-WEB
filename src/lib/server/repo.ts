@@ -16,6 +16,7 @@ export interface Book {
   sourceKind: "file" | "link";
   sourceUrl: string | null;
   fileName: string | null;
+  storedFile: string | null;
   status: BookStatus;
   error: string | null;
   conceptCount: number | null;
@@ -110,6 +111,7 @@ function toBook(r: any): Book {
     sourceKind: r.source_kind,
     sourceUrl: r.source_url,
     fileName: r.file_name,
+    storedFile: r.stored_file ?? null,
     status: r.status,
     error: r.error,
     conceptCount: r.concept_count,
@@ -207,6 +209,17 @@ export function updateBookStatus(
        WHERE id = @id`
     )
     .run({ id: bookId, status: normaliseStatus(status.status), title, author, error });
+}
+
+export function setStoredFile(bookId: number, file: { path: string; size: number; type: string }): void {
+  db()
+    .prepare("UPDATE books SET stored_file = ?, file_size = ?, file_type = ? WHERE id = ?")
+    .run(file.path, file.size, file.type, bookId);
+}
+
+/** Whether any book row still points at this stored original. */
+export function storedFileInUse(path: string): boolean {
+  return !!db().prepare("SELECT 1 FROM books WHERE stored_file = ? LIMIT 1").get(path);
 }
 
 export function setConceptCount(bookId: number, count: number): void {
@@ -552,4 +565,60 @@ export function readersForExport(): ReaderExportRow[] {
     updatesOptIn: r.updates_opt_in == null ? null : r.updates_opt_in === 1,
     updatesOptInAt: r.updates_opt_in_at,
   }));
+}
+
+// ─── Admin: materials ────────────────────────────────────────────────────────
+
+export interface Material {
+  bookId: number;
+  knowledgeId: string;
+  title: string;
+  author: string | null;
+  readerName: string | null;
+  readerEmail: string;
+  sourceKind: "file" | "link";
+  sourceUrl: string | null;
+  fileName: string | null;
+  storedFile: string | null;
+  fileSize: number | null;
+  fileType: string | null;
+  status: BookStatus;
+  conceptCount: number | null;
+  tests: number;
+  addedAt: string;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const toMaterial = (r: any): Material => ({
+  bookId: r.id,
+  knowledgeId: r.knowledge_id,
+  title: r.title,
+  author: r.author,
+  readerName: r.reader_name,
+  readerEmail: r.reader_email,
+  sourceKind: r.source_kind,
+  sourceUrl: r.source_url,
+  fileName: r.file_name,
+  storedFile: r.stored_file,
+  fileSize: r.file_size,
+  fileType: r.file_type,
+  status: r.status,
+  conceptCount: r.concept_count,
+  tests: r.tests,
+  addedAt: r.added_at,
+});
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+const MATERIAL_SQL = `SELECT b.*, u.name AS reader_name, u.email AS reader_email,
+        (SELECT COUNT(*) FROM attempts a WHERE a.book_id = b.id AND a.finished_at IS NOT NULL) AS tests
+   FROM books b JOIN users u ON u.id = b.user_id`;
+
+/** Every book any reader added, newest first. */
+export function adminMaterials(limit = 300): Material[] {
+  return db().prepare(`${MATERIAL_SQL} ORDER BY b.added_at DESC LIMIT ?`).all(limit).map(toMaterial);
+}
+
+export function adminMaterial(bookId: number): Material | null {
+  const row = db().prepare(`${MATERIAL_SQL} WHERE b.id = ?`).get(bookId);
+  return row ? toMaterial(row) : null;
 }

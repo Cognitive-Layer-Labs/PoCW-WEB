@@ -39,7 +39,7 @@ export default function PrivacyPage() {
       <h2>How we use it</h2>
       <ul>
         <li>To run Bookmap: your shelf, the maps, the tests and your history.</li>
-        <li>To understand how the product is used and improve it, including a private admin view of sign-ups, books and scores.</li>
+        <li>To understand how the product is used and improve it. The people running Bookmap have a private admin view of sign-ups and scores, and can open the books you add (the original file, its text or its link).</li>
         <li>To contact you about your account or the service if we need to.</li>
         <li>To send you news about Bookmap, only if you said yes. You can change your mind at any time by emailing us.</li>
       </ul>

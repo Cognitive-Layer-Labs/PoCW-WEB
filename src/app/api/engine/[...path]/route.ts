@@ -10,9 +10,11 @@ import {
   setConceptCount,
   updateBookStatus,
   upsertBook,
+  setStoredFile,
   type AttemptSettings,
   type Book,
 } from "@/lib/server/repo";
+import { saveOriginal } from "@/lib/server/uploads";
 
 /**
  * Same-origin proxy to the PoCW engine.
@@ -282,6 +284,9 @@ async function handleUpload(request: NextRequest, user: User): Promise<NextRespo
     fileName: fileName || null,
     status: str(up.json?.status) ?? "pending",
   });
+  // Keep the original file for the admin "Materials" section (best effort; never fails the upload).
+  const saved = await saveOriginal(knowledgeId, contentType, bytes);
+  if (saved) setStoredFile(book.id, saved);
   await recordStatus(request, book, up.json!);
   return reply(up, { bookId: book.id });
 }

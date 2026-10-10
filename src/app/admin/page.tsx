@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { currentUser, isAdmin } from "@/lib/server/auth";
-import { adminOverview } from "@/lib/server/repo";
+import { adminMaterials, adminOverview } from "@/lib/server/repo";
+import { MaterialLinks, sourceLabel } from "@/components/MaterialLinks";
 import { dateTime, relativeDay, shortDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ export default async function AdminPage() {
   const user = await currentUser();
   if (!user || !isAdmin(user)) notFound();
   const { totals, users, recent } = adminOverview();
+  const materials = adminMaterials();
 
   const stats = [
     { label: "Readers", value: totals.users },
@@ -97,6 +99,73 @@ export default async function AdminPage() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section aria-labelledby="materials-heading" className="mt-12">
+          <h2 id="materials-heading" className="text-2xl font-semibold">
+            Materials
+          </h2>
+          <p className="mt-1 text-sm text-mute">
+            Every book readers added. Download them one at a time: the original file (kept for uploads made since 10 Oct 2026),
+            the text Bookmap extracted from it, or the link it came from.
+          </p>
+          {materials.length === 0 ? (
+            <p className="mt-2 text-mute">No books yet.</p>
+          ) : (
+            <>
+              <ul className="mt-4 flex flex-col divide-y divide-line border-y border-line md:hidden">
+                {materials.map((m) => (
+                  <li key={m.bookId} className="py-4">
+                    <p className="book-title break-words text-lg leading-snug">{m.title}</p>
+                    {m.author && <p className="text-sm text-mute">{m.author}</p>}
+                    <p className="mt-1 break-all text-sm text-mute">
+                      {m.readerName || m.readerEmail}, {relativeDay(m.addedAt)}. {sourceLabel(m)}
+                      {m.status !== "ready" && <span className="text-outcome-attempted"> ({m.status})</span>}
+                    </p>
+                    <div className="mt-3">
+                      <MaterialLinks m={m} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-4 hidden overflow-x-auto md:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-mute">
+                    <tr className="border-b border-line">
+                      <th className="py-2 pr-4 font-semibold">Book</th>
+                      <th className="py-2 pr-4 font-semibold">Reader</th>
+                      <th className="py-2 pr-4 font-semibold">Source</th>
+                      <th className="py-2 pr-4 text-right font-semibold">Concepts</th>
+                      <th className="py-2 pr-4 text-right font-semibold">Tests</th>
+                      <th className="py-2 pr-4 font-semibold">Added</th>
+                      <th className="py-2 font-semibold">Download</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {materials.map((m) => (
+                      <tr key={m.bookId} className="border-b border-line/60 align-top">
+                        <td className="max-w-[16rem] py-2.5 pr-4">
+                          <span className="book-title block truncate">{m.title}</span>
+                          {m.author && <span className="block truncate text-mute">{m.author}</span>}
+                        </td>
+                        <td className="max-w-[12rem] truncate py-2.5 pr-4 text-mute">{m.readerName || m.readerEmail}</td>
+                        <td className="max-w-[14rem] truncate py-2.5 pr-4 text-mute">
+                          {sourceLabel(m)}
+                          {m.status !== "ready" && <span className="text-outcome-attempted"> ({m.status})</span>}
+                        </td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums">{m.conceptCount ?? "–"}</td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums">{m.tests}</td>
+                        <td className="whitespace-nowrap py-2.5 pr-4 text-mute">{shortDate(m.addedAt)}</td>
+                        <td className="py-1.5">
+                          <MaterialLinks m={m} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </section>
 
         <section aria-labelledby="recent-heading" className="mt-12">

@@ -84,6 +84,12 @@ const MIGRATIONS: string[] = [
   ALTER TABLE users ADD COLUMN updates_opt_in INTEGER;
   ALTER TABLE users ADD COLUMN updates_opt_in_at TEXT;
   `,
+  // v3: the original uploaded file, kept for the admin "Materials" downloads
+  `
+  ALTER TABLE books ADD COLUMN stored_file TEXT;   -- path relative to DATA_DIR, e.g. uploads/<knowledgeId>.pdf
+  ALTER TABLE books ADD COLUMN file_size INTEGER;
+  ALTER TABLE books ADD COLUMN file_type TEXT;
+  `,
 ];
 
 function migrate(db: DB): void {
