@@ -3,7 +3,7 @@ import { currentUser } from "@/lib/server/auth";
 import { browseLists } from "@/lib/server/catalog";
 
 /**
- * GET /api/catalog/browse — "Most read in English", "Classics you can test right away" and
+ * GET /api/catalog/browse — "Most read classics" (Project Gutenberg's most downloaded) and
  * "Popular on Bookmap". Cached server-side for a day; only a cold cache makes this wait.
  */
 

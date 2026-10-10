@@ -11,19 +11,19 @@ import {
   once,
   type CatalogEntry,
 } from "./store";
-import { displayAuthor, gutenbergAuthors, mainKey, mainTitle, sameSurname, surname, tidyTitle, titleKey } from "./text";
+import { displayAuthor, gutenbergAuthors, mainKey, mainTitle, normalise, sameSurname, surname, tidyTitle, titleKey } from "./text";
 
 /**
  * Project Gutenberg: the only place Bookmap takes a book's full text from, because everything on
- * it is in the public domain (in the US). In-copyright books are never fetched from anywhere; the
- * reader uploads their own copy.
+ * it is in the public domain (in the US). Search only shows books found here; in-copyright books
+ * are never fetched from anywhere (a reader can still upload a file they have).
  *
  * - Availability: Gutenberg's own catalog (pg_catalog.csv.gz, rebuilt daily by Gutenberg), loaded
  *   into SQLite every few days. Matching a search result is then a local lookup by normalised
- *   title and author. (Gutendex answered in 37-42 s per request when this was built, far too slow
- *   to ask once per search result.)
- * - "Classics you can test right away": Gutendex's most-downloaded English books, falling back to
- *   Gutenberg's OPDS feed of the same ranking when Gutendex doesn't answer in time.
+ *   title and author, and the same table answers searches directly by title or author. (Gutendex
+ *   answered in 37-42 s per request when this was built, far too slow to ask once per search.)
+ * - "Most read classics": Gutendex's most-downloaded English books, falling back to Gutenberg's
+ *   OPDS feed of the same ranking when Gutendex doesn't answer in time.
  * - The text: https://www.gutenberg.org/ebooks/<id>.epub.noimages, fetched and indexed by the engine.
  */
 
@@ -213,26 +213,84 @@ export function matchGutenberg(work: WorkToMatch): GutenbergBook | null {
   for (const b of booksByIds(work.gutenbergIds)) if (byTitle(b)) candidates.set(b.id, b);
   for (const b of booksByTitle([...keys])) if (byAuthor(b) && surnames.length > 0) candidates.set(b.id, b);
   if (candidates.size === 0) return null;
+  return bestEdition([...candidates.values()]);
+}
 
-  const list = [...candidates.values()];
-  const mapped = mappedOnBookmap(list.map((b) => b.id));
-  const rank = popularityRank();
-  list.sort((a, b) => {
-    const m = Number(mapped.has(b.id)) - Number(mapped.has(a.id));
-    if (m) return m;
+/** Most downloaded first (as far as the classics refresh knows), then the oldest. */
+function byDownloads(rank: Map<number, number>): (a: GutenbergBook, b: GutenbergBook) => number {
+  return (a, b) => {
     const ra = rank.get(a.id) ?? Infinity;
     const rb = rank.get(b.id) ?? Infinity;
-    if (ra !== rb) return ra - rb;
-    return a.id - b.id;
+    return ra !== rb ? ra - rb : a.id - b.id;
+  };
+}
+
+/** Among editions of one book: one already mapped on Bookmap, else the most downloaded, else the oldest. */
+function bestEdition(editions: GutenbergBook[]): GutenbergBook {
+  const mapped = mappedOnBookmap(editions.map((b) => b.id));
+  const downloads = byDownloads(popularityRank());
+  return [...editions].sort((a, b) => Number(mapped.has(b.id)) - Number(mapped.has(a.id)) || downloads(a, b))[0];
+}
+
+/** One book in all its editions: the same title (before any subtitle) by the same first author. */
+export function workKey(book: GutenbergBook): string {
+  return `${mainKey(book.title)}|${book.surnames[0] ?? ""}`;
+}
+
+// ─── Searching the catalog ───────────────────────────────────────────────────
+
+const LOCAL_ROWS = 400;
+
+/**
+ * Gutenberg books for what the reader typed, straight from the catalog (so a classic Open Library
+ * ranks poorly is still found), one per book in its best edition, most downloaded then oldest first:
+ *   1. the exact title ("war and peace", "the adventures of sherlock holmes")
+ *   2. then either titles with those words in that order ("sherlock holmes"; only when no title
+ *      is exact, so "pride and prejudice" is Austen's and not a play after it), or books whose
+ *      first author has that name ("dickens", "jane austen", "h g wells"): whichever group is
+ *      larger, so "sherlock" finds Holmes and not a bishop called Sherlock.
+ */
+export function searchGutenberg(query: string, limit = 12): GutenbergBook[] {
+  const q = titleKey(query);
+  if (q.length < 2) return [];
+  const conn = db();
+  const rows = (sql: string, ...params: string[]) => (conn.prepare(sql).all(...params) as unknown[]).map(toBook);
+
+  const exact = rows(`SELECT * FROM gutenberg_books WHERE main_key = ? OR title_key = ? LIMIT ${LOCAL_ROWS}`, q, q);
+  const inTitle = exact.length === 0 && q.length >= 4 ? rows(`SELECT * FROM gutenberg_books WHERE ' ' || title_key || ' ' LIKE ? LIMIT ${LOCAL_ROWS}`, `% ${q} %`) : [];
+
+  const words = q.split(" ").slice(0, 5);
+  const named = words.filter((w) => w.length >= 2);
+  const byAuthor = (
+    named.length === 0
+      ? []
+      : rows(`SELECT * FROM gutenberg_books WHERE ${named.map(() => "' ' || surnames || ' ' LIKE ?").join(" OR ")} LIMIT ${LOCAL_ROWS}`, ...named.map((w) => `% ${w} %`))
+  ).filter((b) => {
+    const first = b.surnames[0];
+    const name = new Set(normalise(b.author ?? "").split(" "));
+    return !!first && words.includes(first) && words.every((w) => w === first || name.has(w));
   });
-  return list[0];
+
+  const groups = [exact, inTitle.length >= byAuthor.length ? inTitle : byAuthor];
+  const downloads = byDownloads(popularityRank());
+  const works = new Map<string, GutenbergBook[]>();
+  for (const group of groups) {
+    for (const b of [...group].sort(downloads)) {
+      const key = workKey(b);
+      const editions = works.get(key);
+      if (editions) {
+        if (!editions.some((e) => e.id === b.id)) editions.push(b);
+      } else if (works.size < limit) works.set(key, [b]);
+    }
+  }
+  return [...works.values()].map(bestEdition);
 }
 
 // ─── Classics ────────────────────────────────────────────────────────────────
 
-const CLASSICS_KEY = "gutenberg:classics:v1";
+const CLASSICS_KEY = "gutenberg:classics:v2";
 const CLASSICS_TTL_MS = 24 * 3600 * 1000;
-const CLASSICS_COUNT = 12;
+const CLASSICS_COUNT = 15;
 
 /** Reference works and multi-volume sets: popular downloads, but not books anyone "has read". */
 const NOT_A_READ = /\b(dictionary|encyclop|thesaurus|glossary|complete works|collected works|works of|index of|catalogue|catalog|anthology|vol\.|volume|part \d+ of|\d+ of \d+)\b/i;

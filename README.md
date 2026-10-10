@@ -1,8 +1,8 @@
 # Bookmap
 
 **Bookmap** (<https://bookmap.baghici.com>) is for people who read books. A reader signs in with Google,
-finds a book they've read in the search (or brings it: a PDF, EPUB, TXT or Markdown file up to 40 MB,
-or a link), and Bookmap draws a map of the book's ideas. The reader can then test themselves on it and share the result. It runs on the
+finds a classic they've read in the search (or brings a book: a PDF, EPUB, TXT or Markdown file up to
+40 MB, or a link), and Bookmap draws a map of the book's ideas. The reader can then test themselves on it and share the result. It runs on the
 PoCW engine.
 
 Next.js 15 (App Router), Tailwind 3, SQLite (`better-sqlite3`), `react-force-graph-2d`. Standalone
@@ -14,7 +14,7 @@ Docker build.
 | --- | --- | --- |
 | `/` | logged out | Landing page: hero, how it works, "Continue with Google". Signed-in readers are sent to `/shelf` |
 | `/shelf` | signed in | The reader's books (real covers when picked from the catalog) with best/last score and number of tests. Empty state shows the book search |
-| `/add` | signed in | Find the book: search as you type (`?q=` keeps the query), "Most read in English", "Classics you can test right away", "Popular on Bookmap". Full text available → "Map & test" in one click; otherwise "Upload your copy to test", bound to that book. Dropping a file or pasting a link works as before |
+| `/add` | signed in | Find a classic: search as you type (`?q=` keeps the query), "Most read classics", "Popular on Bookmap". Only books with free full text are shown, each with "Map & test" (one click) or "Open the book" when it's already on the shelf. Below: drop a file or paste a link |
 | `/book/:id` | owner | Title, idea count, "Test yourself", "Explore the map", past tests, remove. Shows mapping progress (polls the status, honouring `Retry-After`) and failures |
 | `/book/:id/test` | owner | Setup (5/10/15 questions; Gentle/Standard/Challenging; question types), then one question at a time with grading after each answer. A refresh resumes the test (sessionStorage) |
 | `/attempt/:id` | owner | Score, band, likely range, ideas mastered, per-question review, collapsed disclaimers, share, map |
@@ -53,40 +53,40 @@ slashes or empty segments get a 400. Signed-out requests get a 401. Cross-origin
 Levels map to the engine's values: Gentle 0.2 / threshold 0.35, Standard 0.4 / 0.5,
 Challenging 0.65 / 0.65. `max_questions` is sent as chosen; the engine asks exactly that many.
 
-`upload` also takes an optional `x-catalog-key` header ("Upload your copy" of a book picked in the
-catalog): the book row then gets that book's title, author and cover instead of the file name.
-
 Other route handlers: `/api/auth/signin/google`, `/api/auth/callback/google`, `/api/auth/signout`
 (POST), `/api/auth/dev` (POST, dev only), `/api/share` (POST, owner only), `/api/books/:id` (DELETE,
 owner only), and the catalog routes below.
 
 ## Finding a book (catalog)
 
-Readers can find the book they read instead of uploading it. Full text only ever comes from
-**Project Gutenberg** (public domain); Bookmap never fetches in-copyright text from anywhere else, so
-for those books the reader uploads their own copy.
+Readers can find a classic instead of uploading it. Search and lists only show books Bookmap can
+map: their full text is free on **Project Gutenberg** (public domain). Bookmap never fetches
+in-copyright text from anywhere; a reader can still upload a file they have.
 
 | Method | Route | What |
 | --- | --- | --- |
-| GET | `/api/catalog/search?q=` | English books on Open Library (`q=<query> language:eng`, 12 results), each marked full text available or not. Signed in, 30 searches a minute per reader (429 + `Retry-After`), query cut to 120 characters, cached 10 minutes per normalised query, a stale copy (up to a day) if Open Library is down, else 503 "Search is unavailable right now" |
-| GET | `/api/catalog/browse` | The three lists below; waits only when nothing is cached yet |
-| POST | `/api/catalog/add` `{ key }` | "Map & test": the engine indexes `https://www.gutenberg.org/ebooks/<id>.epub.noimages` (same link for every reader, so a book someone already mapped is ready at once), recorded like the proxy's `index`. 409 for books without free full text, 10 a minute per reader, same-origin only |
+| GET | `/api/catalog/search?q=` | Up to 12 books with free full text matching the query (see below). Signed in, 30 searches a minute per reader (429 + `Retry-After`), query cut to 120 characters. Open Library's part is cached 10 minutes per normalised query, a stale copy (up to a day) if Open Library is down; with nothing cached, Gutenberg's own matches are still shown, and only when there are none either: 503 "Search is unavailable right now" |
+| GET | `/api/catalog/browse` | The two lists below; waits only when nothing is cached yet |
+| POST | `/api/catalog/add` `{ key }` | "Map & test": the engine indexes `https://www.gutenberg.org/ebooks/<id>.epub.noimages` (same link for every reader, so a book someone already mapped is ready at once), recorded like the proxy's `index`. 409 for a key without free full text, 10 a minute per reader, same-origin only |
 
-- **Search**: Open Library `search.json`. Works titled in another language ("Преступление и
-  наказание") show their English edition's title.
-- **Full text available**: matched against Project Gutenberg's own catalog
-  (`pg_catalog.csv.gz`, rebuilt daily by Gutenberg), loaded into the `gutenberg_books` table every
-  3 days, English texts only. A match needs the same title (before any subtitle) and an author with
-  the same surname, or a Gutenberg id Open Library links to the work with the same title. Among
-  several editions: one already mapped on Bookmap, else the most downloaded, else the oldest.
-  (Gutendex answered in 37-42 s per request when this was built, too slow to ask per result.)
-- **Most read in English**: `search.json?q=language:eng&sort=already_read&limit=40`, kept to
-  notable books with a cover, an author and a Wikidata id or an English Wikipedia article whose short
-  description names the author (checked in one batched Wikipedia API call, cached 30 days per book).
-  Top 15, cached 24 hours.
-- **Classics you can test right away**: Gutendex `?languages=en&sort=popular` (Gutenberg's OPDS
-  "most downloaded" feed if Gutendex doesn't answer in 6 s), without dictionaries and collected
-  works, top 12, covers from Open Library when its record matches. Cached 24 hours.
+- **Project Gutenberg's catalog** (`pg_catalog.csv.gz`, rebuilt daily by Gutenberg) is loaded into
+  the `gutenberg_books` table every 3 days, English texts only. It decides what can be mapped.
+  (Gutendex answered in 37-42 s per request when this was built, too slow to ask per search.)
+- **Search** combines, one card per book (same title before any subtitle, same first author):
+  1. Open Library `search.json` (`q=<query> language:eng`, 20 works) for its ranking, keeping only
+     works that are on Gutenberg, with Open Library's cover and year. A match needs the same title
+     (before any subtitle) and a first author with the same surname, or a Gutenberg id Open Library
+     links to the work with the same title. Works titled in another language ("Преступление и
+     наказание") show their English edition's title.
+  2. Gutenberg's catalog searched directly, so classics Open Library ranks poorly are still found:
+     the exact title ("war and peace"); if there is none, titles with those words in that order
+     ("sherlock holmes"); and books whose first author has that name ("dickens", "jane austen").
+
+  Among several editions of a book: one already mapped on Bookmap, else the most downloaded, else
+  the oldest.
+- **Most read classics**: Gutendex `?languages=en&sort=popular` (Gutenberg's OPDS "most
+  downloaded" feed if Gutendex doesn't answer in 6 s), without dictionaries and collected works,
+  top 15, numbered, covers from Open Library when its record matches. Cached 24 hours.
 - **Popular on Bookmap**: Gutenberg books readers have mapped, by distinct readers then finished
   tests. Only public Gutenberg sources, described by the catalog, never a reader's upload, name or score.
 - Lists are cached in SQLite and served stale while they refresh in the background; a few seconds

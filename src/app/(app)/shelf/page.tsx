@@ -38,7 +38,8 @@ export default async function ShelfPage() {
         {askUpdates && <UpdatesPrompt />}
         <h1 className="text-[2.2rem] font-semibold leading-tight sm:text-5xl">Welcome, {firstName(user)}.</h1>
         <p className="mb-8 mt-3 max-w-[38rem] text-lg text-mute">
-          Your shelf is empty. Find a book you&apos;ve read, and Bookmap will map its ideas so you can test yourself on it.
+          Your shelf is empty. Find a classic you&apos;ve read, or upload a book you have, and Bookmap will map its ideas so you can test
+          yourself on it.
         </p>
         <FindBook lists={initialLists(user.id)} />
       </div>

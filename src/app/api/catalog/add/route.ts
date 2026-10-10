@@ -5,10 +5,10 @@ import { ENGINE_API_KEY, crossSite, error, indexLinkForUser } from "@/lib/server
 import { rateLimit } from "@/lib/server/rate-limit";
 
 /**
- * POST /api/catalog/add { key } — "Map & test" for a book with free full text: the engine indexes
- * its Project Gutenberg EPUB (the same link for every reader, so a book someone already mapped is
- * ready at once) and the book lands on the reader's shelf with the catalog's title, author and
- * cover. Full text only ever comes from Project Gutenberg; anything else is uploaded by the reader.
+ * POST /api/catalog/add { key } — "Map & test" for a book from the search or the lists: the engine
+ * indexes its Project Gutenberg EPUB (the same link for every reader, so a book someone already
+ * mapped is ready at once) and the book lands on the reader's shelf with the catalog's title,
+ * author and cover. Full text only ever comes from Project Gutenberg.
  */
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const entry = key ? resolveEntry(key) : null;
   if (!entry) return error(404, "That book is no longer in the list. Search for it again.", "NOT_FOUND");
   if (!entry.gutenbergId) {
-    return error(409, "This book has no free full text. Upload your own copy to test yourself on it.", "NOT_AVAILABLE");
+    return error(409, "This book has no free full text, so Bookmap can't map it.", "NOT_AVAILABLE");
   }
 
   const { response } = await indexLinkForUser(request, user.id, new URL(gutenbergEpubUrl(entry.gutenbergId)), entry.title, {

@@ -154,9 +154,7 @@ export function uploadBook(
   file: File,
   contentType: string,
   onProgress: (fraction: number) => void,
-  signal?: AbortSignal,
-  /** The catalog book this file is a copy of: the shelf then shows its title, author and cover. */
-  catalogKey?: string
+  signal?: AbortSignal
 ): Promise<IndexStatus> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -165,7 +163,6 @@ export function uploadBook(
     xhr.open("POST", `${BASE}/upload`);
     xhr.setRequestHeader("content-type", contentType);
     xhr.setRequestHeader("x-file-name", encodeURIComponent(file.name));
-    if (catalogKey) xhr.setRequestHeader("x-catalog-key", catalogKey);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded / e.total);
     };

@@ -13,7 +13,6 @@ import {
   type AttemptSettings,
 } from "@/lib/server/repo";
 import { ENGINE_API_KEY, crossSite, engine, error, indexLinkForUser, recordStatus, reply, str, type Method } from "@/lib/server/engine-proxy";
-import { resolveEntry } from "@/lib/server/catalog";
 import { saveOriginal } from "@/lib/server/uploads";
 import { now } from "@/lib/server/db";
 import { normalizeKeyPoints } from "@/lib/keypoints";
@@ -157,10 +156,6 @@ async function handleUpload(request: NextRequest, user: User): Promise<NextRespo
     fileName = "";
   }
   fileName = fileName.replace(/[\u0000-\u001f\u007f/\\]+/g, " ").trim().slice(0, 300);
-  // "Upload your copy" for a book picked in the catalog: the book row takes the catalog's title,
-  // author and cover instead of the file name. An unknown key just means a plain upload.
-  const catalogKey = (request.headers.get("x-catalog-key") || "").trim();
-  const catalog = catalogKey ? resolveEntry(catalogKey) : null;
 
   const bytes = await readBody(request, MAX_UPLOAD_BYTES);
   if (bytes === "too-large") return error(413, "That file is larger than 40 MB", "PAYLOAD_TOO_LARGE");
@@ -174,10 +169,7 @@ async function handleUpload(request: NextRequest, user: User): Promise<NextRespo
   const book = upsertBook({
     userId: user.id,
     knowledgeId,
-    title: catalog?.title ?? titleFromFileName(fileName || "Untitled book"),
-    author: catalog?.author ?? null,
-    coverUrl: catalog?.coverUrl ?? null,
-    catalogKey: catalog?.key ?? null,
+    title: titleFromFileName(fileName || "Untitled book"),
     sourceKind: "file",
     fileName: fileName || null,
     status: str(up.json?.status) ?? "pending",

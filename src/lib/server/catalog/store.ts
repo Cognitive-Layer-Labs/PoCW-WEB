@@ -149,8 +149,8 @@ export async function cachedOrStale<T>(key: string, ttlMs: number, staleMs: numb
 
 /**
  * A book as Open Library or Project Gutenberg describe it. Every book the server shows a reader
- * is stored, so "Map & test" and "Upload your copy" only send its key: the title, author, cover
- * and Gutenberg id a book gets always come from the catalog, never from the browser.
+ * is stored, so "Map & test" only sends its key: the title, author, cover and Gutenberg id a book
+ * gets always come from the catalog, never from the browser.
  */
 export interface CatalogEntry {
   key: string;

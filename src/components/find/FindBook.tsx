@@ -3,14 +3,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Loader2, Search, Upload, Waypoints, X } from "lucide-react";
+import { Check, Loader2, Search, Upload, Waypoints, X } from "lucide-react";
 import { AddBook } from "@/components/AddBook";
 import { Cover } from "@/components/Cover";
 import { ShelfRow } from "@/components/find/ShelfRow";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { MAX_QUERY_LENGTH, type BrowseLists, type CatalogItem } from "@/lib/catalog";
 import { SearchError, browseBooks, mapBook, searchBooks } from "@/lib/catalog-client";
-import { EngineError } from "@/lib/engine";
 import { cn } from "@/lib/utils";
 
 type SearchState =
@@ -23,9 +22,9 @@ const DEBOUNCE_MS = 350;
 const tidy = (q: string) => q.replace(/\s+/g, " ").trim();
 
 /**
- * Finding the book a reader has read: search Open Library as they type, or pick from the
- * shelves below. A book with free full text (Project Gutenberg) is mapped in one click; any
- * other book opens the upload, bound to that book. A file or link can always be added directly.
+ * Finding a book to test on: search as the reader types, or pick from the shelves below. Only
+ * books Bookmap can map are shown (free full text on Project Gutenberg), each mapped in one
+ * click. Any other book can be added as a file or a link at the bottom of the page.
  */
 export function FindBook({ initialQuery = "", lists: initialLists }: { initialQuery?: string; lists: BrowseLists | null }) {
   const router = useRouter();
@@ -35,14 +34,11 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
   const [search, setSearch] = useState<SearchState>({ status: "idle" });
   const [lists, setLists] = useState<BrowseLists | null>(initialLists);
   const [listsFailed, setListsFailed] = useState(false);
-  const [bound, setBound] = useState<CatalogItem | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const cache = useRef(new Map<string, CatalogItem[]>());
   const controller = useRef<AbortController | null>(null);
-  const boundHeading = useRef<HTMLHeadingElement>(null);
   const alertRef = useRef<HTMLParagraphElement>(null);
-  const top = useRef<HTMLDivElement>(null);
 
   // Lists not cached on the server yet (first minutes after a deploy): fetch them.
   useEffect(() => {
@@ -103,22 +99,11 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
     if (problem) alertRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [problem]);
 
-  useEffect(() => {
-    if (bound) {
-      top.current?.scrollIntoView({ block: "start", behavior: "smooth" });
-      boundHeading.current?.focus({ preventScroll: true });
-    }
-  }, [bound]);
-
   async function pick(item: CatalogItem) {
     if (pendingKey) return;
     setProblem(null);
     if (item.bookId !== null) {
       router.push(`/book/${item.bookId}`);
-      return;
-    }
-    if (!item.available) {
-      setBound(item);
       return;
     }
     setPendingKey(item.key);
@@ -127,46 +112,8 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
       router.push(`/book/${bookId}`);
     } catch (err) {
       setPendingKey(null);
-      if (err instanceof EngineError && err.code === "NOT_AVAILABLE") {
-        setBound({ ...item, available: false });
-        return;
-      }
       setProblem(err instanceof Error ? err.message : "That book couldn't be added. Try again.");
     }
-  }
-
-  if (bound) {
-    return (
-      <div ref={top} className="max-w-3xl scroll-mt-6">
-        <button
-          type="button"
-          onClick={() => setBound(null)}
-          className="-ml-1 inline-flex min-h-11 items-center gap-1.5 rounded-full px-1 text-mute hover:text-paper"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Choose a different book
-        </button>
-        <section aria-labelledby="copy-heading" className="mt-4">
-          <div className="flex items-start gap-5">
-            <Cover title={bound.title} author={bound.author} src={bound.coverUrl} size="md" />
-            <div className="min-w-0 pt-1">
-              <p className="text-mute">Upload your copy of</p>
-              <h2 id="copy-heading" ref={boundHeading} tabIndex={-1} className="mt-0.5 break-words text-[1.75rem] font-semibold leading-tight outline-none sm:text-[2.1rem]">
-                {bound.title}
-              </h2>
-              {(bound.author || bound.year) && (
-                <p className="mt-1 text-mute">{[bound.author, bound.year].filter(Boolean).join(", ")}</p>
-              )}
-            </div>
-          </div>
-          <p className="mt-6 max-w-[38rem] text-lg">
-            Bookmap can only use a copy you own. Drop the PDF or EPUB of <span className="book-title">{bound.title}</span> here.
-          </p>
-          <div className="mt-5">
-            <AddBook book={{ key: bound.key, title: bound.title }} />
-          </div>
-        </section>
-      </div>
-    );
   }
 
   const q = tidy(query);
@@ -174,7 +121,7 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
   const shown = search.status === "done" ? search.items : search.status === "loading" ? search.items : null;
 
   return (
-    <div ref={top}>
+    <div>
       <form
         role="search"
         className="max-w-3xl"
@@ -184,7 +131,7 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
         }}
       >
         <label htmlFor={inputId} className="sr-only">
-          Search for a book by title or author
+          Search free classics by title or author
         </label>
         <div className="relative">
           <Search className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-mute" aria-hidden="true" />
@@ -205,7 +152,7 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
               }
             }}
             aria-describedby={statusId}
-            placeholder="Title or author"
+            placeholder="A classic, by title or author"
             className="h-14 w-full rounded-full border border-line-strong bg-ink-sunk pl-14 pr-14 text-lg text-paper placeholder:text-mute/70 focus:border-ribbon focus:outline-none [&::-webkit-search-cancel-button]:hidden"
           />
           {query && (
@@ -233,7 +180,7 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
             search.items.length === 0 ? (
               ""
             ) : (
-              `${search.items.length === 1 ? "1 book" : `${search.items.length} books`} from Open Library`
+              `${search.items.length === 1 ? "1 book" : `${search.items.length} books`} with free full text`
             )
           ) : (
             ""
@@ -252,7 +199,7 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
           {search.status === "error" ? (
             <Notice title={search.message} />
           ) : search.status === "done" && search.items.length === 0 ? (
-            <Notice title={`No English books match “${search.query}”.`} line="Check the spelling or try the author's name. If you have the file, you can upload it." />
+            <NoMatch query={search.query} onTry={setQuery} />
           ) : shown ? (
             <ul className={cn("grid gap-x-10 md:grid-cols-2", search.status === "loading" && "opacity-60 transition-opacity")}>
               {shown.map((item) => (
@@ -268,19 +215,11 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
           {listsFailed ? null : (
             <>
               <ShelfRow
-                id="most-read"
-                title="Most read in English"
-                intro="The books Open Library readers have marked as read most often. Most are in copyright, so you upload your own copy."
-                items={lists?.mostRead ?? null}
-                ranked
-                pendingKey={pendingKey}
-                onPick={pick}
-              />
-              <ShelfRow
                 id="classics"
-                title="Classics you can test right away"
-                intro="Public-domain books from Project Gutenberg. One click maps the book and opens it, ready for a test."
+                title="Most read classics"
+                intro="The most downloaded books on Project Gutenberg, free to map. One click maps the book and opens it, ready for a test."
                 items={lists?.classics ?? null}
+                ranked
                 pendingKey={pendingKey}
                 onPick={pick}
               />
@@ -310,14 +249,43 @@ export function FindBook({ initialQuery = "", lists: initialLists }: { initialQu
   );
 }
 
-function Notice({ title, line }: { title: string; line?: string }) {
+function Notice({ title }: { title: string }) {
   return (
     <div className="max-w-3xl rounded-2xl border border-line-strong bg-ink-raised/60 px-5 py-4">
       <p className="font-semibold">{title}</p>
-      {line && <p className="mt-1 text-mute">{line}</p>}
       <a href="#upload" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3")}>
         <Upload aria-hidden="true" /> Upload a file
       </a>
+    </div>
+  );
+}
+
+const TRY = ["Pride and Prejudice", "Sherlock Holmes", "Charles Dickens"];
+
+/** Nothing Bookmap can map: what it can map, a few classics to try, and the upload below. */
+function NoMatch({ query, onTry }: { query: string; onTry: (query: string) => void }) {
+  return (
+    <div className="max-w-3xl rounded-2xl border border-line-strong bg-ink-raised/60 px-5 py-4">
+      <p className="font-semibold">No books with free full text match “{query}”.</p>
+      <p className="mt-1 text-mute">
+        Bookmap can map books whose full text is free: public-domain classics from Project Gutenberg. Try a classic:
+      </p>
+      <ul className="mt-3 flex flex-wrap gap-2">
+        {TRY.map((t) => (
+          <li key={t}>
+            <Button variant="outline" size="sm" onClick={() => onTry(t)}>
+              {t}
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-4 text-sm text-mute">
+        You can still{" "}
+        <a href="#upload" className="font-semibold text-paper underline decoration-line-strong underline-offset-4 hover:decoration-ribbon">
+          upload a file you have
+        </a>{" "}
+        below.
+      </p>
     </div>
   );
 }
@@ -330,32 +298,20 @@ function Result({ item, pending, disabled, onPick }: { item: CatalogItem; pendin
       <div className="min-w-0 flex-1">
         <h3 className="line-clamp-3 break-words text-[1.2rem] font-semibold leading-snug">{item.title}</h3>
         {meta && <p className="mt-0.5 text-mute">{meta}</p>}
-        <p className={cn("mt-2 flex items-center gap-1.5 text-sm font-semibold", item.available ? "text-ribbon-soft" : "text-mute")}>
-          {item.bookId !== null ? (
-            <>
-              <Check className="h-3.5 w-3.5 text-paper" aria-hidden="true" /> <span className="text-paper">On your shelf</span>
-            </>
-          ) : item.available ? (
-            <>
-              <Waypoints className="h-3.5 w-3.5 text-ribbon" aria-hidden="true" /> Full text available
-            </>
-          ) : (
-            "No free full text"
-          )}
-        </p>
+        {item.bookId !== null && (
+          <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold">
+            <Check className="h-3.5 w-3.5" aria-hidden="true" /> On your shelf
+          </p>
+        )}
         <div className="mt-3">
           {item.bookId !== null ? (
             <Link href={`/book/${item.bookId}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Open the book
             </Link>
-          ) : item.available ? (
-            <Button size="sm" className="px-4" onClick={() => onPick(item)} disabled={disabled} aria-busy={pending}>
-              {pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
-              {pending ? "Opening…" : "Map & test"}
-            </Button>
           ) : (
-            <Button variant="outline" size="sm" className="px-4" onClick={() => onPick(item)} disabled={disabled}>
-              <Upload aria-hidden="true" /> Upload your copy to test
+            <Button size="sm" className="px-4" onClick={() => onPick(item)} disabled={disabled} aria-busy={pending}>
+              {pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Waypoints aria-hidden="true" />}
+              {pending ? "Opening…" : "Map & test"}
             </Button>
           )}
         </div>

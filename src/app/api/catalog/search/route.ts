@@ -4,8 +4,8 @@ import { UpstreamError, normaliseQuery, searchCatalog, toItems } from "@/lib/ser
 import { rateLimit } from "@/lib/server/rate-limit";
 
 /**
- * GET /api/catalog/search?q=... — English books on Open Library matching the query, each marked
- * "full text available" (Project Gutenberg) or not. Signed-in readers only, 30 searches a minute.
+ * GET /api/catalog/search?q=... — books Bookmap can map (free full text on Project Gutenberg)
+ * matching the query, up to 12. Signed-in readers only, 30 searches a minute.
  */
 
 export const dynamic = "force-dynamic";

@@ -107,8 +107,8 @@ const MIGRATIONS: Migration[] = [
   // v5: finding books instead of uploading them. Idempotent, so it is safe on a database that
   // already has some of it.
   //   books.cover_url    real cover (Open Library or Project Gutenberg), else the generated cloth cover
-  //   books.catalog_key  the catalog book the reader picked (Open Library work "OL…W" or Gutenberg
-  //                      "pg<id>"); its title, author and cover win over the file's or the engine's
+  //   books.catalog_key  the catalog book the reader picked with "Map & test" (Open Library work
+  //                      "OL…W" or Gutenberg "pg<id>"); its title, author and cover win over the engine's
   //   catalog_cache      upstream answers (searches, lists, the Gutenberg catalog date), with fetch time
   //   catalog_entries    every book the server has shown a reader, so later requests send only a key
   //   gutenberg_books    Project Gutenberg's English texts, from its daily catalog, for matching
@@ -144,6 +144,14 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS gutenberg_books_main ON gutenberg_books(main_key);
     `);
   },
+  // v6: search and lists show only books Bookmap can map (free full text on Project Gutenberg).
+  // Drops what the earlier lists cached: "Most read in English" and its Wikipedia checks, the
+  // 12-book classics list, and the catalog entries of books without free full text.
+  `
+  DELETE FROM catalog_cache
+   WHERE key IN ('openlibrary:most-read:v1', 'gutenberg:classics:v1') OR key LIKE 'wikipedia:%';
+  DELETE FROM catalog_entries WHERE gutenberg_id IS NULL;
+  `,
 ];
 
 function migrate(db: DB): void {

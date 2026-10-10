@@ -44,10 +44,10 @@ export async function browseBooks(): Promise<BrowseLists> {
     throw new Error("The book lists couldn't be loaded.");
   }
   const body = (await json(res)) as Partial<BrowseLists> | null;
-  return { mostRead: body?.mostRead ?? [], classics: body?.classics ?? [], popular: body?.popular ?? [] };
+  return { classics: body?.classics ?? [], popular: body?.popular ?? [] };
 }
 
-/** "Map & test": adds a book with free full text to the shelf. Returns its book id. */
+/** "Map & test": adds a book to the shelf from its Project Gutenberg text. Returns its book id. */
 export async function mapBook(key: string): Promise<number> {
   let res: Response;
   try {

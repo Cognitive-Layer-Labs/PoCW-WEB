@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronLeft, ChevronRight, Loader2, Upload, Waypoints } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Loader2, Waypoints } from "lucide-react";
 import { Cover } from "@/components/Cover";
 import type { CatalogItem } from "@/lib/catalog";
 import { plural } from "@/lib/format";
@@ -155,15 +155,10 @@ function ShelfBook({
               <Check className="h-3.5 w-3.5 text-paper" aria-hidden="true" />
               <span>On your shelf</span>
             </>
-          ) : item.available ? (
+          ) : (
             <>
               <Waypoints className="h-3.5 w-3.5 text-ribbon" aria-hidden="true" />
               <span className="text-ribbon-soft">Map &amp; test</span>
-            </>
-          ) : (
-            <>
-              <Upload className="h-3.5 w-3.5 text-mute" aria-hidden="true" />
-              <span className="text-mute">Upload your copy</span>
             </>
           )}
         </span>

@@ -1,4 +1,7 @@
-/** A book from the catalog (Open Library or Project Gutenberg), as the browser sees it. */
+/**
+ * A book from the catalog, as the browser sees it. Only books with free full text on Project
+ * Gutenberg are ever sent: every one can be mapped straight away.
+ */
 export interface CatalogItem {
   /** Open Library work ("OL66554W") or Gutenberg book ("pg1342"); the only thing sent back. */
   key: string;
@@ -6,8 +9,6 @@ export interface CatalogItem {
   author: string | null;
   year: number | null;
   coverUrl: string | null;
-  /** Full text from Project Gutenberg: Bookmap can map it straight away. */
-  available: boolean;
   /** Already on this reader's shelf. */
   bookId: number | null;
   /** Popular on Bookmap: how many readers have it. */
@@ -15,7 +16,7 @@ export interface CatalogItem {
 }
 
 export interface BrowseLists {
-  mostRead: CatalogItem[];
+  /** "Most read classics": Project Gutenberg's most downloaded English books. */
   classics: CatalogItem[];
   popular: CatalogItem[];
 }

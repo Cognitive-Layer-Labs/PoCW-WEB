@@ -10,10 +10,13 @@ import {
   gutenbergEpubUrl,
   loadClassics,
   matchGutenberg,
+  searchGutenberg,
+  workKey,
 } from "./gutenberg";
-import { mostReadWorks, olCoverUrl, searchWorks, type OlWork } from "./openlibrary";
+import { olCoverUrl, searchWorks, type OlWork } from "./openlibrary";
 import {
   KEY_PATTERN,
+  UpstreamError,
   cacheGet,
   cachedOrStale,
   entryByKey,
@@ -23,7 +26,7 @@ import {
   staleWhileRevalidate,
   type CatalogEntry,
 } from "./store";
-import { normalise, tidyTitle, mainTitle } from "./text";
+import { mainKey, mainTitle, normalise, tidyTitle, titleKey } from "./text";
 
 export { UpstreamError } from "./store";
 export { gutenbergEpubUrl } from "./gutenberg";
@@ -31,23 +34,9 @@ export type { CatalogEntry } from "./store";
 
 const SEARCH_TTL_MS = 10 * 60 * 1000;
 const SEARCH_STALE_MS = 24 * 3600 * 1000;
-const MOST_READ_KEY = "openlibrary:most-read:v1";
-const MOST_READ_TTL_MS = 24 * 3600 * 1000;
+const SEARCH_RESULTS = 12;
 
-/**
- * Two Open Library works can lead to the same Gutenberg book (duplicate records): keep the first.
- * Books without a cover go after the ones with one; they are usually stray records.
- */
-function tidyResults(entries: CatalogEntry[]): CatalogEntry[] {
-  const seen = new Set<number>();
-  const unique = entries.filter((e) => {
-    if (e.gutenbergId === null) return true;
-    if (seen.has(e.gutenbergId)) return false;
-    seen.add(e.gutenbergId);
-    return true;
-  });
-  return [...unique.filter((e) => e.coverUrl), ...unique.filter((e) => !e.coverUrl)];
-}
+const sameTitle = (a: string, b: string) => [mainKey(a), titleKey(a)].some((k) => k === mainKey(b) || k === titleKey(b));
 
 /** An Open Library work as a catalog entry, with its Gutenberg edition when there is one. */
 function entryFromWork(work: OlWork): CatalogEntry {
@@ -56,9 +45,12 @@ function entryFromWork(work: OlWork): CatalogEntry {
     authors: work.authors,
     gutenbergIds: work.gutenbergIds,
   });
+  // The title Gutenberg has the book under: an English edition's title is sometimes a collection's
+  // ("Works of Charles Dickens" for Oliver Twist).
+  const title = pg && work.altTitle && !sameTitle(work.title, pg.title) && sameTitle(work.altTitle, pg.title) ? work.altTitle : work.title;
   return {
     key: work.key,
-    title: work.title,
+    title,
     // Gutenberg writes authors the English way ("Fyodor Dostoyevsky", not "Fiódor Dostoievski").
     author: (pg?.author ?? work.authors[0] ?? null)?.slice(0, 200) ?? null,
     year: work.year,
@@ -67,30 +59,56 @@ function entryFromWork(work: OlWork): CatalogEntry {
   };
 }
 
+/** One card per book: the first entry for each Gutenberg work (title and first author) is kept. */
+function onePerWork(entries: CatalogEntry[]): CatalogEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((e) => {
+    if (e.gutenbergId === null) return false;
+    const pg = gutenbergBook(e.gutenbergId);
+    const key = pg ? workKey(pg) : `pg${e.gutenbergId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function normaliseQuery(raw: string): string {
   return raw.replace(/\s+/g, " ").trim().slice(0, MAX_QUERY_LENGTH);
 }
 
-/** Search results, cached for 10 minutes per normalised query (and served stale if Open Library is down). */
+/**
+ * Books Bookmap can map, for what the reader typed: Open Library's results that are on Project
+ * Gutenberg (they keep Open Library's cover and year), then Gutenberg's own catalog searched by
+ * title and author, one card per book, up to 12. Open Library's part is cached for 10 minutes per
+ * normalised query (served stale for a day if Open Library is down); if it is down with nothing
+ * cached, the catalog's matches are still shown.
+ */
 export async function searchCatalog(query: string): Promise<CatalogEntry[]> {
   ensureGutenbergCatalog();
-  const key = `search:${normalise(query)}`;
   if (Math.random() < 0.02) pruneSearchCache();
-  return cachedOrStale(key, SEARCH_TTL_MS, SEARCH_STALE_MS, async () => {
-    const entries = tidyResults((await searchWorks(query)).map(entryFromWork));
-    saveEntries(entries);
-    return entries;
-  });
+  let fromOpenLibrary: CatalogEntry[] = [];
+  let failure: UpstreamError | null = null;
+  try {
+    fromOpenLibrary = await cachedOrStale(`search:${normalise(query)}`, SEARCH_TTL_MS, SEARCH_STALE_MS, async () => {
+      const entries = (await searchWorks(query)).map(entryFromWork).filter((e) => e.gutenbergId !== null);
+      saveEntries(entries);
+      return entries;
+    });
+  } catch (err) {
+    if (!(err instanceof UpstreamError)) throw err;
+    failure = err;
+  }
+  const fromGutenberg = searchGutenberg(query, SEARCH_RESULTS)
+    .map((b) => resolveEntry(`pg${b.id}`))
+    .filter((e): e is CatalogEntry => !!e);
+  if (failure) {
+    if (fromGutenberg.length === 0) throw failure;
+    console.warn("[catalog] Open Library search failed, showing Gutenberg's matches only:", failure.message);
+  }
+  return onePerWork([...fromOpenLibrary, ...fromGutenberg]).slice(0, SEARCH_RESULTS);
 }
 
-export async function mostRead(): Promise<CatalogEntry[]> {
-  return staleWhileRevalidate(MOST_READ_KEY, MOST_READ_TTL_MS, async () => {
-    const entries = tidyResults((await mostReadWorks(16)).map(entryFromWork)).slice(0, 15);
-    saveEntries(entries);
-    return entries;
-  });
-}
-
+/** "Most read classics": the most downloaded English books on Project Gutenberg. */
 export async function classics(): Promise<CatalogEntry[]> {
   const value = await staleWhileRevalidate(CLASSICS_KEY, CLASSICS_TTL_MS, async () => {
     const result = await loadClassics();
@@ -98,18 +116,6 @@ export async function classics(): Promise<CatalogEntry[]> {
     return result;
   });
   return value.entries;
-}
-
-/** Cached lists only, without waiting on anything (for server-rendering the page). */
-export function cachedLists(): { mostRead: CatalogEntry[] | null; classics: CatalogEntry[] | null } {
-  const most = cacheGet<CatalogEntry[]>(MOST_READ_KEY);
-  const cls = cacheGet<{ entries: CatalogEntry[] }>(CLASSICS_KEY);
-  // Stale lists are still shown; asking for them again starts the refresh.
-  if ((most && Date.now() - most.fetchedAt > MOST_READ_TTL_MS) || (cls && Date.now() - cls.fetchedAt > CLASSICS_TTL_MS)) {
-    void mostRead().catch(() => undefined);
-    void classics().catch(() => undefined);
-  }
-  return { mostRead: most?.value ?? null, classics: cls?.value.entries ?? null };
 }
 
 /**
@@ -158,7 +164,10 @@ export function resolveEntry(key: string): CatalogEntry | null {
   return { key, title: tidyTitle(mainTitle(pg.title)), author: pg.author, year: null, coverUrl: gutenbergCoverUrl(id), gutenbergId: id };
 }
 
-/** What the browser gets: no Gutenberg ids, plus whether each book is already on this reader's shelf. */
+/**
+ * What the browser gets: only books with free full text (Gutenberg ids stay on the server), and
+ * whether each is already on this reader's shelf.
+ */
 export function toItems(userId: number, entries: Array<CatalogEntry & { readers?: number }>): CatalogItem[] {
   const shelf = db().prepare("SELECT id, catalog_key, source_url FROM books WHERE user_id = ?").all(userId) as Array<{
     id: number;
@@ -171,47 +180,48 @@ export function toItems(userId: number, entries: Array<CatalogEntry & { readers?
     if (b.catalog_key) byKey.set(b.catalog_key, b.id);
     if (b.source_url) byUrl.set(b.source_url, b.id);
   }
-  return entries.map((e) => ({
-    key: e.key,
-    title: e.title,
-    author: e.author,
-    year: e.year,
-    coverUrl: e.coverUrl,
-    available: e.gutenbergId !== null,
-    bookId: byKey.get(e.key) ?? (e.gutenbergId ? byUrl.get(gutenbergEpubUrl(e.gutenbergId)) : undefined) ?? null,
-    ...(e.readers !== undefined ? { readers: e.readers } : {}),
-  }));
+  return entries
+    .filter((e): e is typeof e & { gutenbergId: number } => e.gutenbergId !== null)
+    .map((e) => ({
+      key: e.key,
+      title: e.title,
+      author: e.author,
+      year: e.year,
+      coverUrl: e.coverUrl,
+      bookId: byKey.get(e.key) ?? byUrl.get(gutenbergEpubUrl(e.gutenbergId)) ?? null,
+      ...(e.readers !== undefined ? { readers: e.readers } : {}),
+    }));
 }
 
 /** Everything the Add-a-book page shows before the reader types. Waits only on a cold cache. */
 export async function browseLists(userId: number): Promise<BrowseLists> {
   ensureGutenbergCatalog();
-  const [most, cls] = await Promise.allSettled([mostRead(), classics()]);
-  if (most.status === "rejected") console.warn("[catalog] most read list unavailable:", most.reason instanceof Error ? most.reason.message : most.reason);
-  if (cls.status === "rejected") console.warn("[catalog] classics unavailable:", cls.reason instanceof Error ? cls.reason.message : cls.reason);
-  return {
-    mostRead: toItems(userId, most.status === "fulfilled" ? most.value : []),
-    classics: toItems(userId, cls.status === "fulfilled" ? cls.value : []),
-    popular: toItems(userId, popularOnBookmap()),
-  };
+  let list: CatalogEntry[] = [];
+  try {
+    list = await classics();
+  } catch (err) {
+    console.warn("[catalog] most read classics unavailable:", err instanceof Error ? err.message : err);
+  }
+  return { classics: toItems(userId, list), popular: toItems(userId, popularOnBookmap()) };
 }
 
 /**
  * The lists for server-rendering the page, from the cache only (never waiting on an upstream).
- * Null when a list isn't cached yet: the page then asks /api/catalog/browse, which waits for it.
+ * Null when the classics aren't cached yet: the page then asks /api/catalog/browse, which waits.
  */
 export function initialLists(userId: number): BrowseLists | null {
   ensureGutenbergCatalog();
-  const { mostRead: most, classics: cls } = cachedLists();
-  if (!most || !cls) return null;
-  return { mostRead: toItems(userId, most), classics: toItems(userId, cls), popular: toItems(userId, popularOnBookmap()) };
+  const cached = cacheGet<{ entries: CatalogEntry[] }>(CLASSICS_KEY);
+  if (!cached) return null;
+  // A stale list is still shown; asking for it again starts the refresh.
+  if (Date.now() - cached.fetchedAt > CLASSICS_TTL_MS) void classics().catch(() => undefined);
+  return { classics: toItems(userId, cached.value.entries), popular: toItems(userId, popularOnBookmap()) };
 }
 
 /** Fills the caches shortly after the server starts, so the first reader doesn't wait. */
 export function warmCatalog(): void {
   try {
     ensureGutenbergCatalog();
-    void mostRead().catch((err) => console.warn("[catalog] warm-up: most read failed:", err instanceof Error ? err.message : err));
     void classics().catch((err) => console.warn("[catalog] warm-up: classics failed:", err instanceof Error ? err.message : err));
   } catch (err) {
     console.warn("[catalog] warm-up failed:", err instanceof Error ? err.message : err);
