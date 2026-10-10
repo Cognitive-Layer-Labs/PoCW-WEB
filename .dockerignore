@@ -10,3 +10,4 @@ Dockerfile
 README.md
 *.tsbuildinfo
 npm-debug.log*
+data
