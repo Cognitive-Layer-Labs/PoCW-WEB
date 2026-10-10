@@ -288,9 +288,11 @@ export function searchGutenberg(query: string, limit = 12): GutenbergBook[] {
 
 // ─── Classics ────────────────────────────────────────────────────────────────
 
-const CLASSICS_KEY = "gutenberg:classics:v2";
+const CLASSICS_KEY = "gutenberg:classics:v3";
 const CLASSICS_TTL_MS = 24 * 3600 * 1000;
 const CLASSICS_COUNT = 15;
+/** Popular books considered before keeping the 15 that Open Library also knows. */
+const CLASSICS_CANDIDATES = 30;
 
 /** Reference works and multi-volume sets: popular downloads, but not books anyone "has read". */
 const NOT_A_READ = /\b(dictionary|encyclop|thesaurus|glossary|complete works|collected works|works of|index of|catalogue|catalog|anthology|vol\.|volume|part \d+ of|\d+ of \d+)\b/i;
@@ -432,11 +434,12 @@ async function loadClassics(): Promise<{ entries: CatalogEntry[]; popularIds: nu
     const title = tidyTitle(mainTitle(b.title));
     if (NOT_A_READ.test(b.title) || title.length < 2) continue;
     const author = pg?.author ?? b.author;
+    if (!author) continue; // a classic needs a known author
     const dedupe = `${titleKey(title)}|${surname(author ?? "")}`;
     if (seen.has(dedupe)) continue;
     seen.add(dedupe);
     picked.push({ id: b.id, title, author });
-    if (picked.length === CLASSICS_COUNT) break;
+    if (picked.length === CLASSICS_CANDIDATES) break;
   }
 
   let covers = new Map<number, string>();
@@ -446,7 +449,12 @@ async function loadClassics(): Promise<{ entries: CatalogEntry[]; popularIds: nu
     console.warn("[catalog] Open Library covers for classics failed, using Gutenberg's:", err instanceof Error ? err.message : err);
   }
 
-  const entries = picked.map<CatalogEntry>((b) => ({
+  // Keep books Open Library also knows (it has a cover for them), in download order. This drops
+  // obscure titles that only pass briefly through Gutenberg's download chart. If Open Library is
+  // down, fall back to the download order.
+  const chosen = [...picked.filter((b) => covers.has(b.id)), ...picked.filter((b) => !covers.has(b.id))].slice(0, CLASSICS_COUNT);
+
+  const entries = chosen.map<CatalogEntry>((b) => ({
     key: `pg${b.id}`,
     title: b.title,
     author: b.author,

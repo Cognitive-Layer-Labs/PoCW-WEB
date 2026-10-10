@@ -67,7 +67,7 @@ export default async function BookPage({ params }: Props) {
             {book.sourceKind === "link" && book.sourceUrl ? (
               <>
                 {" "}from{" "}
-                <span className="break-all">
+                <span className="break-words">
                   {/(^|\.)gutenberg\.org$/.test(new URL(book.sourceUrl).hostname) ? "Project Gutenberg" : new URL(book.sourceUrl).hostname.replace(/^www\./, "")}
                 </span>
               </>
