@@ -424,10 +424,26 @@ export function sharedResult(slug: string): SharedResult | null {
   };
 }
 
+// ─── Product-update emails ───────────────────────────────────────────────────
+
+/** null = not asked yet. */
+export function updatesOptIn(userId: number): boolean | null {
+  const row = db().prepare("SELECT updates_opt_in FROM users WHERE id = ?").get(userId) as
+    | { updates_opt_in: number | null }
+    | undefined;
+  return row?.updates_opt_in == null ? null : row.updates_opt_in === 1;
+}
+
+export function setUpdatesOptIn(userId: number, optIn: boolean): void {
+  db()
+    .prepare("UPDATE users SET updates_opt_in = ?, updates_opt_in_at = ? WHERE id = ?")
+    .run(optIn ? 1 : 0, now(), userId);
+}
+
 // ─── Admin ───────────────────────────────────────────────────────────────────
 
 export interface AdminOverview {
-  totals: { users: number; books: number; attempts: number; avgScore: number | null };
+  totals: { users: number; books: number; attempts: number; avgScore: number | null; optedIn: number };
   users: Array<{
     id: number;
     name: string | null;
@@ -436,6 +452,7 @@ export interface AdminOverview {
     lastSeenAt: string | null;
     books: number;
     attempts: number;
+    updatesOptIn: boolean | null;
   }>;
   recent: Array<{
     id: number;
@@ -456,19 +473,20 @@ export function adminOverview(): AdminOverview {
       `SELECT (SELECT COUNT(*) FROM users) AS users,
               (SELECT COUNT(*) FROM books) AS books,
               (SELECT COUNT(*) FROM attempts WHERE finished_at IS NOT NULL) AS attempts,
-              (SELECT AVG(score) FROM attempts WHERE finished_at IS NOT NULL) AS avg_score`
+              (SELECT AVG(score) FROM attempts WHERE finished_at IS NOT NULL) AS avg_score,
+              (SELECT COUNT(*) FROM users WHERE updates_opt_in = 1) AS opted_in`
     )
-    .get() as { users: number; books: number; attempts: number; avg_score: number | null };
+    .get() as { users: number; books: number; attempts: number; avg_score: number | null; opted_in: number };
   const users = conn
     .prepare(
-      `SELECT u.id, u.name, u.email, u.created_at, u.last_seen_at,
+      `SELECT u.id, u.name, u.email, u.created_at, u.last_seen_at, u.updates_opt_in,
               (SELECT COUNT(*) FROM books b WHERE b.user_id = u.id) AS books,
               (SELECT COUNT(*) FROM attempts a WHERE a.user_id = u.id AND a.finished_at IS NOT NULL) AS attempts
          FROM users u
         ORDER BY COALESCE(u.last_seen_at, u.created_at) DESC
         LIMIT 500`
     )
-    .all() as Array<{ id: number; name: string | null; email: string; created_at: string; last_seen_at: string | null; books: number; attempts: number }>;
+    .all() as Array<{ id: number; name: string | null; email: string; created_at: string; last_seen_at: string | null; updates_opt_in: number | null; books: number; attempts: number }>;
   const recent = conn
     .prepare(
       `SELECT a.id, u.name, u.email, b.title, a.score, a.questions_asked, a.started_at, a.finished_at
@@ -478,7 +496,7 @@ export function adminOverview(): AdminOverview {
     )
     .all() as Array<{ id: number; name: string | null; email: string; title: string; score: number | null; questions_asked: number | null; started_at: string; finished_at: string | null }>;
   return {
-    totals: { users: totals.users, books: totals.books, attempts: totals.attempts, avgScore: totals.avg_score },
+    totals: { users: totals.users, books: totals.books, attempts: totals.attempts, avgScore: totals.avg_score, optedIn: totals.opted_in },
     users: users.map((u) => ({
       id: u.id,
       name: u.name,
@@ -487,6 +505,7 @@ export function adminOverview(): AdminOverview {
       lastSeenAt: u.last_seen_at,
       books: u.books,
       attempts: u.attempts,
+      updatesOptIn: u.updates_opt_in == null ? null : u.updates_opt_in === 1,
     })),
     recent: recent.map((r) => ({
       id: r.id,
@@ -499,4 +518,38 @@ export function adminOverview(): AdminOverview {
       finishedAt: r.finished_at,
     })),
   };
+}
+
+export interface ReaderExportRow {
+  name: string | null;
+  email: string;
+  joinedAt: string;
+  lastSeenAt: string | null;
+  books: number;
+  tests: number;
+  updatesOptIn: boolean | null;
+  updatesOptInAt: string | null;
+}
+
+/** Every reader, oldest first — for the admin CSV export. */
+export function readersForExport(): ReaderExportRow[] {
+  const rows = db()
+    .prepare(
+      `SELECT u.name, u.email, u.created_at, u.last_seen_at, u.updates_opt_in, u.updates_opt_in_at,
+              (SELECT COUNT(*) FROM books b WHERE b.user_id = u.id) AS books,
+              (SELECT COUNT(*) FROM attempts a WHERE a.user_id = u.id AND a.finished_at IS NOT NULL) AS tests
+         FROM users u
+        ORDER BY u.created_at ASC`
+    )
+    .all() as Array<{ name: string | null; email: string; created_at: string; last_seen_at: string | null; updates_opt_in: number | null; updates_opt_in_at: string | null; books: number; tests: number }>;
+  return rows.map((r) => ({
+    name: r.name,
+    email: r.email,
+    joinedAt: r.created_at,
+    lastSeenAt: r.last_seen_at,
+    books: r.books,
+    tests: r.tests,
+    updatesOptIn: r.updates_opt_in == null ? null : r.updates_opt_in === 1,
+    updatesOptInAt: r.updates_opt_in_at,
+  }));
 }

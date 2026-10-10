@@ -79,6 +79,11 @@ const MIGRATIONS: string[] = [
     created_at  TEXT NOT NULL
   );
   `,
+  // v2: whether the reader wants product-update emails (NULL = not asked yet, 1 = yes, 0 = no)
+  `
+  ALTER TABLE users ADD COLUMN updates_opt_in INTEGER;
+  ALTER TABLE users ADD COLUMN updates_opt_in_at TEXT;
+  `,
 ];
 
 function migrate(db: DB): void {

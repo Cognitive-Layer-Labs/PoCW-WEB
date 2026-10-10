@@ -20,7 +20,8 @@ Docker build.
 | `/attempt/:id` | owner | Score, band, likely range, ideas mastered, per-question review, collapsed disclaimers, share, map |
 | `/book/:id/map` | owner | Full-screen map. Phones get a bottom sheet for idea details; the map re-fits after resize/rotation. Colored by the latest (or `?attempt=`) test |
 | `/s/:slug` | public | Shared result: first name, book, score, ideas mastered, "Map your own book". Dynamic Open Graph image at `/s/:slug/opengraph-image` (1200x630 PNG) |
-| `/admin` | `ADMIN_EMAILS` | Read-only totals, readers table, recent tests. 404 for everyone else |
+| `/admin` | `ADMIN_EMAILS` | Read-only totals, readers table (with update-email choice), recent tests, CSV export at `/admin/readers.csv`. 404 for everyone else |
+| `/privacy`, `/terms` | public | Plain-language privacy policy and terms (needed for Google's "In production" consent screen) |
 | `/dev-login` | tests only | Exists only when `AUTH_DEV_LOGIN=1` |
 
 ## How it fits together
@@ -113,6 +114,7 @@ See `.env.example`. All variables are server-only.
 | `AUTH_SECRET` | (required in production) | Long random string (`openssl rand -base64 32`) |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | (required) | OAuth web client |
 | `ADMIN_EMAILS` | (none) | Comma-separated emails allowed on `/admin` |
+| `CONTACT_EMAIL` | first `ADMIN_EMAILS` entry | Contact shown on `/privacy` and `/terms` |
 | `DATA_DIR` | `./data` (`/app/data` in Docker) | Where `bookmap.db` lives |
 | `AUTH_DEV_LOGIN` | unset | `1` enables `/dev-login`. Tests only |
 

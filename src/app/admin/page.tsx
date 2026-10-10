@@ -19,7 +19,9 @@ export default async function AdminPage() {
     { label: "Books", value: totals.books },
     { label: "Finished tests", value: totals.attempts },
     { label: "Average score", value: totals.avgScore === null ? "n/a" : Math.round(totals.avgScore) },
+    { label: "Want updates", value: totals.optedIn },
   ];
+  const updatesLabel = (v: boolean | null) => (v === null ? "not asked" : v ? "yes" : "no");
 
   return (
     <div className="flex min-h-[100dvh] flex-col">
@@ -28,7 +30,7 @@ export default async function AdminPage() {
         <h1 className="text-[2.2rem] font-semibold leading-tight sm:text-5xl">Admin</h1>
         <p className="mt-2 text-mute">Read-only. Times are UTC.</p>
 
-        <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-6 border-y border-line py-6 md:grid-cols-4" data-testid="admin-totals">
+        <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-6 border-y border-line py-6 md:grid-cols-5" data-testid="admin-totals">
           {stats.map((s) => (
             <div key={s.label}>
               <dt className="text-sm text-mute">{s.label}</dt>
@@ -38,9 +40,18 @@ export default async function AdminPage() {
         </dl>
 
         <section aria-labelledby="users-heading" className="mt-12">
-          <h2 id="users-heading" className="text-2xl font-semibold">
-            Readers
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="users-heading" className="text-2xl font-semibold">
+              Readers
+            </h2>
+            <a
+              href="/admin/readers.csv"
+              download
+              className="inline-flex h-11 items-center rounded-full border border-line-strong px-4 text-sm font-semibold hover:border-ribbon hover:text-ribbon-soft"
+            >
+              Export CSV
+            </a>
+          </div>
           {/* Phones: cards */}
           <ul className="mt-4 flex flex-col divide-y divide-line border-y border-line md:hidden">
             {users.map((u) => (
@@ -52,6 +63,7 @@ export default async function AdminPage() {
                   <span className="text-paper">
                     {u.books} books, {u.attempts} tests
                   </span>
+                  . Updates: {updatesLabel(u.updatesOptIn)}
                 </p>
               </li>
             ))}
@@ -66,7 +78,8 @@ export default async function AdminPage() {
                   <th className="py-2 pr-4 font-semibold">Joined</th>
                   <th className="py-2 pr-4 font-semibold">Last seen</th>
                   <th className="py-2 pr-4 text-right font-semibold">Books</th>
-                  <th className="py-2 text-right font-semibold">Tests</th>
+                  <th className="py-2 pr-4 text-right font-semibold">Tests</th>
+                  <th className="py-2 font-semibold">Updates</th>
                 </tr>
               </thead>
               <tbody>
@@ -77,7 +90,8 @@ export default async function AdminPage() {
                     <td className="py-2.5 pr-4 text-mute">{shortDate(u.createdAt)}</td>
                     <td className="py-2.5 pr-4 text-mute">{dateTime(u.lastSeenAt) || "never"}</td>
                     <td className="py-2.5 pr-4 text-right tabular-nums">{u.books}</td>
-                    <td className="py-2.5 text-right tabular-nums">{u.attempts}</td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums">{u.attempts}</td>
+                    <td className="py-2.5 text-mute">{updatesLabel(u.updatesOptIn)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { AddBook } from "@/components/AddBook";
+import { UpdatesPrompt } from "@/components/UpdatesPrompt";
 import { Cover } from "@/components/Cover";
 import { buttonVariants } from "@/components/ui/button";
 import { firstName, requireUser } from "@/lib/server/auth";
-import { shelf, type ShelfBook } from "@/lib/server/repo";
+import { shelf, updatesOptIn, type ShelfBook } from "@/lib/server/repo";
 import { plural, relativeDay } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -28,10 +29,12 @@ function BookStats({ book }: { book: ShelfBook }) {
 export default async function ShelfPage() {
   const user = await requireUser("/shelf");
   const books = shelf(user.id);
+  const askUpdates = updatesOptIn(user.id) === null;
 
   if (books.length === 0) {
     return (
       <div className="mx-auto max-w-3xl px-4 pb-16 pt-8 sm:px-8 sm:pt-14">
+        {askUpdates && <UpdatesPrompt />}
         <h1 className="text-[2.2rem] font-semibold leading-tight sm:text-5xl">Welcome, {firstName(user)}.</h1>
         <p className="mt-3 max-w-[36rem] text-lg text-mute">
           Your shelf is empty. Add a book you&apos;ve read, and Bookmap will map its ideas so you can test yourself on it.
@@ -45,6 +48,7 @@ export default async function ShelfPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-8 sm:pt-12">
+      {askUpdates && <UpdatesPrompt />}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[2.2rem] font-semibold leading-tight sm:text-5xl">Your shelf</h1>
