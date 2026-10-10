@@ -90,6 +90,13 @@ const MIGRATIONS: string[] = [
   ALTER TABLE books ADD COLUMN file_size INTEGER;
   ALTER TABLE books ADD COLUMN file_type TEXT;
   `,
+  // v4: indexes for the admin dashboard's per-day and per-book aggregates
+  `
+  CREATE INDEX IF NOT EXISTS users_created ON users(created_at);
+  CREATE INDEX IF NOT EXISTS books_added ON books(added_at);
+  CREATE INDEX IF NOT EXISTS attempts_book ON attempts(book_id);
+  CREATE INDEX IF NOT EXISTS attempts_started ON attempts(started_at);
+  `,
 ];
 
 function migrate(db: DB): void {

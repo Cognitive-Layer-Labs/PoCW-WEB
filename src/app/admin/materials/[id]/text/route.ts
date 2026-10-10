@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUser, isAdmin } from "@/lib/server/auth";
-import { adminMaterial } from "@/lib/server/repo";
+import { adminMaterial } from "@/lib/server/admin";
 import { attachment, titleSlug } from "@/lib/server/download";
 
 export const dynamic = "force-dynamic";

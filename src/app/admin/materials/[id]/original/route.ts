@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 import { currentUser, isAdmin } from "@/lib/server/auth";
-import { adminMaterial } from "@/lib/server/repo";
+import { adminMaterial } from "@/lib/server/admin";
 import { MIME_BY_EXT, storedPath } from "@/lib/server/uploads";
 import { attachment, titleSlug } from "@/lib/server/download";
 

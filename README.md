@@ -20,7 +20,7 @@ Docker build.
 | `/attempt/:id` | owner | Score, band, likely range, ideas mastered, per-question review, collapsed disclaimers, share, map |
 | `/book/:id/map` | owner | Full-screen map. Phones get a bottom sheet for idea details; the map re-fits after resize/rotation. Colored by the latest (or `?attempt=`) test |
 | `/s/:slug` | public | Shared result: first name, book, score, ideas mastered, "Map your own book". Dynamic Open Graph image at `/s/:slug/opengraph-image` (1200x630 PNG) |
-| `/admin` | `ADMIN_EMAILS` | Read-only totals, readers table (with update-email choice), recent tests, CSV export at `/admin/readers.csv`. 404 for everyone else |
+| `/admin` | `ADMIN_EMAILS` | Read-only operator dashboard, 404 for everyone else. Overview (7-day KPIs against the 7 before, 30-day activity, reader funnel, recent activity), `/admin/readers` (search, sort, per-reader page, CSV at `/admin/readers.csv`), `/admin/books` (filters, downloads, mapping failures), `/admin/tests` (scores, settings, accuracy by type/Bloom/difficulty, time per question, per-attempt review, CSV at `/admin/tests.csv`), `/admin/costs` (LLM spend from the engine's `GET /api/usage`, fetched server-side) |
 | `/privacy`, `/terms` | public | Plain-language privacy policy and terms (needed for Google's "In production" consent screen) |
 | `/dev-login` | tests only | Exists only when `AUTH_DEV_LOGIN=1` |
 
