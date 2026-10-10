@@ -79,3 +79,28 @@ ${SLOTS.map(([x, y, r], i) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${colo
 </svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
+
+const COVER_HOSTS = new Set(["covers.openlibrary.org", "www.gutenberg.org"]);
+
+/**
+ * A book's real cover as a data URI for an Open Graph image, or null. Only the catalog's cover
+ * hosts are fetched (Open Library redirects to archive.org), with a timeout and a size cap.
+ */
+export async function coverDataUri(url: string | null): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !COVER_HOSTS.has(parsed.hostname)) return null;
+    const res = await fetch(parsed, {
+      headers: { "user-agent": "Bookmap/1.0 (+https://bookmap.baghici.com)" },
+      signal: AbortSignal.timeout(5000),
+    });
+    const type = (res.headers.get("content-type") || "").split(";")[0].trim();
+    if (!res.ok || (type !== "image/jpeg" && type !== "image/png")) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength < 200 || buf.byteLength > 2 * 1024 * 1024) return null;
+    return `data:${type};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}

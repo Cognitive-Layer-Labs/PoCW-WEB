@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { AddBook } from "@/components/AddBook";
+import { FindBook } from "@/components/find/FindBook";
 import { UpdatesPrompt } from "@/components/UpdatesPrompt";
 import { Cover } from "@/components/Cover";
 import { buttonVariants } from "@/components/ui/button";
 import { firstName, requireUser } from "@/lib/server/auth";
 import { shelf, updatesOptIn, type ShelfBook } from "@/lib/server/repo";
+import { initialLists } from "@/lib/server/catalog";
 import { plural, relativeDay } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -33,15 +34,13 @@ export default async function ShelfPage() {
 
   if (books.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-4 pb-16 pt-8 sm:px-8 sm:pt-14">
+      <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-8 sm:pt-14">
         {askUpdates && <UpdatesPrompt />}
         <h1 className="text-[2.2rem] font-semibold leading-tight sm:text-5xl">Welcome, {firstName(user)}.</h1>
-        <p className="mt-3 max-w-[36rem] text-lg text-mute">
-          Your shelf is empty. Add a book you&apos;ve read, and Bookmap will map its ideas so you can test yourself on it.
+        <p className="mb-8 mt-3 max-w-[38rem] text-lg text-mute">
+          Your shelf is empty. Find a book you&apos;ve read, and Bookmap will map its ideas so you can test yourself on it.
         </p>
-        <div className="mt-8">
-          <AddBook />
-        </div>
+        <FindBook lists={initialLists(user.id)} />
       </div>
     );
   }
@@ -66,7 +65,7 @@ export default async function ShelfPage() {
               href={`/book/${book.id}`}
               className="group flex items-start gap-5 rounded-2xl px-2 py-4 transition-colors hover:bg-ink-raised sm:px-3"
             >
-              <Cover title={book.title} author={book.author} size="md" ribbon={book.attempts > 0} />
+              <Cover title={book.title} author={book.author} src={book.coverUrl} size="md" ribbon={book.attempts > 0} />
               <div className="min-w-0 flex-1 pt-1">
                 <h2 className="line-clamp-3 break-words text-xl font-semibold leading-snug group-hover:text-ribbon-soft">{book.title}</h2>
                 {book.author && <p className="mt-0.5 truncate text-mute">{book.author}</p>}

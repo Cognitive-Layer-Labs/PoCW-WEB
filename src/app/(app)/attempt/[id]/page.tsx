@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, RotateCcw, Waypoints } from "lucide-react";
 import { AttemptReview } from "@/components/AttemptReview";
+import { Cover } from "@/components/Cover";
 import { ScoreScale } from "@/components/ScoreScale";
 import { ShareButton } from "@/components/ShareButton";
 import { buttonVariants } from "@/components/ui/button";
@@ -30,8 +31,10 @@ export default async function AttemptPage({ params }: Props) {
   if (!attempt || !book) notFound();
 
   const back = (
-    <Link href={`/book/${book.id}`} className="-ml-1 inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full px-1 text-mute hover:text-paper">
-      <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" /> <span className="truncate book-title">{book.title}</span>
+    <Link href={`/book/${book.id}`} className="group -ml-1 inline-flex min-h-11 max-w-full items-center gap-2.5 rounded-lg px-1 py-1 text-mute hover:text-paper">
+      <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <Cover title={book.title} author={book.author} src={book.coverUrl} size="xs" />
+      <span className="truncate book-title">{book.title}</span>
     </Link>
   );
 

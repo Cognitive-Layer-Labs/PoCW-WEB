@@ -5,14 +5,17 @@ const isDev = process.env.NODE_ENV !== "production";
 // Next.js App Router streams its payload through inline <script> tags, so
 // script-src needs 'unsafe-inline' (nonces would force every page to render
 // dynamically). The map renders to <canvas>. Google profile photos come from
-// lh3.googleusercontent.com. Sign-in is a top-level GET navigation to
+// lh3.googleusercontent.com. Book covers come from Open Library
+// (covers.openlibrary.org, which redirects to archive.org and then to an
+// ia*.us.archive.org storage node) and Project Gutenberg (www.gutenberg.org);
+// images only, every other directive is unchanged. Sign-in is a top-level GET navigation to
 // accounts.google.com (a link, then a redirect), which CSP does not restrict,
 // so form-action and connect-src stay 'self'.
 const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://lh3.googleusercontent.com",
+  "img-src 'self' data: blob: https://lh3.googleusercontent.com https://covers.openlibrary.org https://archive.org https://*.us.archive.org https://www.gutenberg.org",
   "font-src 'self' data:",
   `connect-src 'self'${isDev ? " ws:" : ""}`,
   "worker-src 'self' blob:",

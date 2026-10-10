@@ -1,7 +1,8 @@
 import { ImageResponse } from "next/og";
 import { firstName } from "@/lib/server/auth";
 import { sharedResult } from "@/lib/server/repo";
-import { MARK_DATA_URI, OG_COLORS, OG_FONT_FAMILY, mapPageDataUri, ogFonts } from "@/lib/server/og";
+import { MARK_DATA_URI, OG_COLORS, OG_FONT_FAMILY, coverDataUri, mapPageDataUri, ogFonts } from "@/lib/server/og";
+import { coverAt } from "@/lib/catalog";
 
 export const runtime = "nodejs";
 export const alt = "A Bookmap result";
@@ -32,6 +33,7 @@ export default async function ShareImage({ params }: Props) {
     .sort((a, b) => b.asked - a.asked)
     .map((c) => (c.asked <= 0 ? "untested" : c.mastered ? "mastered" : "attempted") as "mastered" | "attempted" | "untested");
   const title = r.bookTitle.length > 70 ? `${r.bookTitle.slice(0, 68)}…` : r.bookTitle;
+  const cover = await coverDataUri(r.bookCover && coverAt(r.bookCover, "L"));
 
   return new ImageResponse(
     (
@@ -58,10 +60,33 @@ export default async function ShareImage({ params }: Props) {
             <span style={{ color: OG_COLORS.ribbon }}>Map your own book</span>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flex: 1 }}>
-          {/* eslint-disable-next-line jsx-a11y/alt-text */}
-          <img src={mapPageDataUri(outcomes)} width={400} height={324} />
-        </div>
+        {cover ? (
+          // The book's cover in front of its map page.
+          <div style={{ display: "flex", position: "relative", flex: 1 }}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
+            <img src={mapPageDataUri(outcomes)} width={360} height={292} style={{ position: "absolute", right: 0, top: 6 }} />
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
+            <img
+              src={cover}
+              width={220}
+              height={330}
+              style={{
+                position: "absolute",
+                left: 24,
+                bottom: 0,
+                objectFit: "cover",
+                borderRadius: "4px 7px 7px 4px",
+                border: `2px solid ${OG_COLORS.ink}`,
+                boxShadow: "0 18px 40px rgba(0,0,0,0.55)",
+              }}
+            />
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flex: 1 }}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
+            <img src={mapPageDataUri(outcomes)} width={400} height={324} />
+          </div>
+        )}
       </div>
     ),
     { ...size, fonts }

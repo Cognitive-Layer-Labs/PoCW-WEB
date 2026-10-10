@@ -105,7 +105,7 @@ const FRIENDLY: Record<number, string> = {
   504: "The engine took too long to answer. Try again.",
 };
 
-function toError(status: number, body: unknown, fallback: string): EngineError {
+export function toError(status: number, body: unknown, fallback: string): EngineError {
   const b = (body ?? {}) as { error?: unknown; code?: unknown };
   const code = typeof b.code === "string" ? b.code : undefined;
   const message = FRIENDLY[status] || (typeof b.error === "string" && b.error) || `${fallback} (HTTP ${status}).`;
@@ -113,7 +113,7 @@ function toError(status: number, body: unknown, fallback: string): EngineError {
 }
 
 /** A 401 means the session ended: send the reader back to sign in. */
-function signedOut(status: number) {
+export function signedOut(status: number) {
   if (status === 401 && typeof window !== "undefined") {
     window.location.assign(`/?next=${encodeURIComponent(window.location.pathname)}`);
   }
@@ -154,7 +154,9 @@ export function uploadBook(
   file: File,
   contentType: string,
   onProgress: (fraction: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** The catalog book this file is a copy of: the shelf then shows its title, author and cover. */
+  catalogKey?: string
 ): Promise<IndexStatus> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -163,6 +165,7 @@ export function uploadBook(
     xhr.open("POST", `${BASE}/upload`);
     xhr.setRequestHeader("content-type", contentType);
     xhr.setRequestHeader("x-file-name", encodeURIComponent(file.name));
+    if (catalogKey) xhr.setRequestHeader("x-catalog-key", catalogKey);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded / e.total);
     };

@@ -196,6 +196,17 @@ export async function browseLists(userId: number): Promise<BrowseLists> {
   };
 }
 
+/**
+ * The lists for server-rendering the page, from the cache only (never waiting on an upstream).
+ * Null when a list isn't cached yet: the page then asks /api/catalog/browse, which waits for it.
+ */
+export function initialLists(userId: number): BrowseLists | null {
+  ensureGutenbergCatalog();
+  const { mostRead: most, classics: cls } = cachedLists();
+  if (!most || !cls) return null;
+  return { mostRead: toItems(userId, most), classics: toItems(userId, cls), popular: toItems(userId, popularOnBookmap()) };
+}
+
 /** Fills the caches shortly after the server starts, so the first reader doesn't wait. */
 export function warmCatalog(): void {
   try {

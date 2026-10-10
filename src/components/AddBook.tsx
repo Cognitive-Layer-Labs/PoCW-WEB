@@ -10,7 +10,11 @@ import { cn } from "@/lib/utils";
 
 type Phase = { name: "idle" } | { name: "uploading"; label: string; progress: number } | { name: "starting"; label: string };
 
-export function AddBook() {
+/**
+ * Drop a file or paste a link. With `book`, the upload is the reader's own copy of a book they
+ * picked in the catalog: only files are taken, and the shelf shows that book's title and cover.
+ */
+export function AddBook({ book }: { book?: { key: string; title: string } }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -39,7 +43,8 @@ export function AddBook() {
         file,
         checked.contentType,
         (progress) => setPhase(progress >= 1 ? { name: "starting", label: file.name } : { name: "uploading", label: file.name, progress }),
-        controller.signal
+        controller.signal,
+        book?.key
       );
       setPhase({ name: "starting", label: file.name });
       router.push(`/book/${status.bookId}`);
@@ -109,7 +114,11 @@ export function AddBook() {
         role="button"
         tabIndex={0}
         aria-describedby={problem ? problemId : undefined}
-        aria-label="Add a book file: drop a PDF, EPUB, .txt or .md file here, or press Enter to choose one"
+        aria-label={
+          book
+            ? `Add your copy of ${book.title}: drop a PDF, EPUB, .txt or .md file here, or press Enter to choose one`
+            : "Add a book file: drop a PDF, EPUB, .txt or .md file here, or press Enter to choose one"
+        }
         data-testid="dropzone"
         onClick={() => inputRef.current?.click()}
         onKeyDown={(e) => {
@@ -149,8 +158,8 @@ export function AddBook() {
               "Let go to add it"
             ) : (
               <>
-                <span className="[@media(pointer:coarse)]:hidden">Drop your book here</span>
-                <span className="hidden [@media(pointer:coarse)]:inline">Choose a book file</span>
+                <span className="[@media(pointer:coarse)]:hidden">{book ? "Drop your copy here" : "Drop your book here"}</span>
+                <span className="hidden [@media(pointer:coarse)]:inline">{book ? "Choose your copy" : "Choose a book file"}</span>
               </>
             )}
           </p>
@@ -174,39 +183,41 @@ export function AddBook() {
         />
       </div>
 
-      <form
-        noValidate
-        className="flex flex-col gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void sendLink();
-        }}
-      >
-        <label htmlFor={urlId} className="font-semibold text-paper">
-          Or paste a link
-        </label>
-        <p className="-mt-1 text-sm text-mute">A link to a PDF or EPUB file, or to a web page with the text.</p>
-        <div className="mt-1 flex flex-col gap-3 sm:flex-row">
-          <div className="relative min-w-0 flex-1">
-            <Link2 className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" aria-hidden="true" />
-            <input
-              id={urlId}
-              type="url"
-              inputMode="url"
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://…"
-              className="h-12 w-full rounded-full border border-line-strong bg-ink-sunk pl-11 pr-4 text-paper placeholder:text-mute/70 focus:border-ribbon focus:outline-none"
-            />
+      {!book && (
+        <form
+          noValidate
+          className="flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void sendLink();
+          }}
+        >
+          <label htmlFor={urlId} className="font-semibold text-paper">
+            Or paste a link
+          </label>
+          <p className="-mt-1 text-sm text-mute">A link to a PDF or EPUB file, or to a web page with the text.</p>
+          <div className="mt-1 flex flex-col gap-3 sm:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <Link2 className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" aria-hidden="true" />
+              <input
+                id={urlId}
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://…"
+                className="h-12 w-full rounded-full border border-line-strong bg-ink-sunk pl-11 pr-4 text-paper placeholder:text-mute/70 focus:border-ribbon focus:outline-none"
+              />
+            </div>
+            <Button type="submit" size="lg" className="h-12">
+              Add from link
+            </Button>
           </div>
-          <Button type="submit" size="lg" className="h-12">
-            Add from link
-          </Button>
-        </div>
-      </form>
+        </form>
+      )}
 
       <p id={problemId} role="alert" className={cn("text-danger", !problem && "sr-only")}>
         {problem ?? ""}

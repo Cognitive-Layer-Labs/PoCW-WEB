@@ -9,6 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { requireUser } from "@/lib/server/auth";
 import { attemptsForBook, bookForUser } from "@/lib/server/repo";
 import { LEVEL_LABELS, band, plural, relativeDay } from "@/lib/format";
+import { coverAt } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -42,8 +43,15 @@ export default async function BookPage({ params }: Props) {
 
       <div className="mt-4 grid gap-6 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-10">
         <div className="flex items-start gap-5 sm:block">
-          <Cover title={book.title} author={book.author} size="lg" ribbon={attempts.length > 0} className="max-sm:hidden" />
-          <Cover title={book.title} author={book.author} size="md" ribbon={attempts.length > 0} className="sm:hidden" />
+          <Cover
+            title={book.title}
+            author={book.author}
+            src={book.coverUrl && coverAt(book.coverUrl, "L")}
+            size="lg"
+            ribbon={attempts.length > 0}
+            className="max-sm:hidden"
+          />
+          <Cover title={book.title} author={book.author} src={book.coverUrl} size="md" ribbon={attempts.length > 0} className="sm:hidden" />
           <div className="min-w-0 sm:hidden">
             <h1 className="break-words text-[1.75rem] font-semibold leading-tight">{book.title}</h1>
             {book.author && <p className="mt-1 text-mute">{book.author}</p>}
@@ -58,7 +66,10 @@ export default async function BookPage({ params }: Props) {
             added {relativeDay(book.addedAt)}
             {book.sourceKind === "link" && book.sourceUrl ? (
               <>
-                {" "}from <span className="break-all">{new URL(book.sourceUrl).hostname.replace(/^www\./, "")}</span>
+                {" "}from{" "}
+                <span className="break-all">
+                  {/(^|\.)gutenberg\.org$/.test(new URL(book.sourceUrl).hostname) ? "Project Gutenberg" : new URL(book.sourceUrl).hostname.replace(/^www\./, "")}
+                </span>
               </>
             ) : book.fileName ? (
               <> from {book.fileName}</>

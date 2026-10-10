@@ -8,6 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { firstName } from "@/lib/server/auth";
 import { sharedResult } from "@/lib/server/repo";
 import { band } from "@/lib/format";
+import { coverAt } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +51,14 @@ export default async function SharePage({ params }: Props) {
       </header>
       <main id="main" className="flex-1">
         <div className="mx-auto grid max-w-4xl gap-10 px-4 pb-16 pt-6 sm:px-8 sm:pt-12 md:grid-cols-[auto_minmax(0,1fr)] md:gap-14">
-          <Cover title={r.bookTitle} author={r.bookAuthor} size="lg" ribbon className="mx-auto md:mx-0" />
+          <Cover
+            title={r.bookTitle}
+            author={r.bookAuthor}
+            src={r.bookCover && coverAt(r.bookCover, "L")}
+            size="lg"
+            ribbon
+            className="mx-auto md:mx-0"
+          />
           <div>
             <p className="text-lg text-mute">{who} tested themselves on</p>
             <h1 className="book-title mt-1 break-words text-[2.2rem] font-semibold leading-tight sm:text-5xl">{r.bookTitle}</h1>
