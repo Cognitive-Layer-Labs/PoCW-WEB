@@ -1,6 +1,6 @@
 {
-  "name": "pocw-web",
-  "version": "0.2.0",
+  "name": "bookmap-web",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001",
@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",
-    "@fontsource-variable/bricolage-grotesque": "5.3.0",
-    "@radix-ui/react-dialog": "^1.1.4",
+    "@fontsource-variable/literata": "5.3.0",
     "@radix-ui/react-slot": "^1.1.1",
+    "better-sqlite3": "13.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "d3-force-3d": "3.0.6",
@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "3.3.7",
+    "@types/better-sqlite3": "9.6.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
