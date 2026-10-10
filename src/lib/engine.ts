@@ -1,11 +1,11 @@
 /**
- * Browser client for the PoCW engine. Every call goes to this app's own
- * route handler (/api/engine/...), which forwards it to the engine.
+ * Browser client for the engine. Every call goes to this app's own route
+ * handler (/api/engine/...), which checks the session and forwards it.
  */
 
 const BASE = "/api/engine";
 
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 
 // ─── Engine shapes ───────────────────────────────────────────────────────────
 
@@ -15,9 +15,9 @@ export interface IndexStatus {
   knowledgeId: string;
   status: "pending" | "indexing" | "ready" | "failed" | string;
   title?: string;
-  source?: string;
+  author?: string;
   error?: string;
-  contentId?: number;
+  bookId?: number;
 }
 
 export interface VerifyQuestion {
@@ -33,8 +33,8 @@ export interface VerifyQuestion {
 export interface StartResponse {
   sessionId: string;
   question: VerifyQuestion;
-  importantConceptCount?: number;
   maxQuestions?: number;
+  attemptId?: number;
 }
 
 export interface AnswerFeedback {
@@ -44,46 +44,9 @@ export interface AnswerFeedback {
   reasoning: string;
   referenceKeyPoints?: string[];
   correctAnswer?: string;
-  progress: { questionNumber: number; theta: number; se: number; bloomLevel: string };
+  progress?: { questionNumber: number; theta: number; se: number; bloomLevel: string };
   isComplete: boolean;
   nextQuestion?: VerifyQuestion;
-}
-
-export interface ResponseDetail {
-  question: string;
-  type: QuestionType;
-  /** 0-100 */
-  score: number;
-  difficulty: number;
-  bloomLevel: string;
-  correct: boolean;
-  conceptId?: string | null;
-}
-
-export interface ConceptOutcome {
-  id: string;
-  label: string;
-  asked: number;
-  correct: number;
-  mastered: boolean;
-}
-
-export interface PoCWResult {
-  competenceIndicator: boolean;
-  /** 0-100, projected from theta */
-  score: number;
-  theta: number;
-  se: number;
-  converged: boolean;
-  /** 0-100 */
-  confidence_interval: [number, number];
-  questions_asked: number;
-  response_detail?: ResponseDetail[];
-  concepts?: ConceptOutcome[];
-  knowledgeId: string;
-  subject?: string;
-  timestamp?: string;
-  disclaimers?: Record<string, string>;
 }
 
 export interface GraphNode {
@@ -100,26 +63,17 @@ export interface GraphEdge {
 }
 
 export interface KnowledgeGraph {
-  contentId?: number;
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
 
-export type Difficulty = "easy" | "medium" | "hard";
+export type Level = "gentle" | "standard" | "challenging";
 
 export interface TestSettings {
-  questions: number;
-  difficulty: Difficulty;
+  questions: 5 | 10 | 15;
+  level: Level;
   types: QuestionType[];
 }
-
-// Mirrors the engine's difficulty presets, but sent as explicit values so the
-// learner's chosen question count is respected (the preset would override it).
-const DIFFICULTY_VALUES: Record<Difficulty, { difficulty: number; threshold: number }> = {
-  easy: { difficulty: 0.2, threshold: 0.35 },
-  medium: { difficulty: 0.4, threshold: 0.5 },
-  hard: { difficulty: 0.65, threshold: 0.65 },
-};
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -128,137 +82,143 @@ export class EngineError extends Error {
     super(message);
     this.name = "EngineError";
   }
-  /** The session or document no longer exists on the engine. */
+  /** The session or book no longer exists. */
   get gone(): boolean {
     return this.status === 404 || this.status === 410;
   }
 }
 
 const FRIENDLY: Record<number, string> = {
-  413: "That file is larger than 10 MB.",
-  429: "The engine is busy right now. Wait a minute and try again.",
-  502: "The engine is unreachable right now. Try again in a moment.",
+  401: "You've been signed out. Sign in again to continue.",
+  413: "That file is larger than 40 MB.",
+  429: "Bookmap is busy right now. Wait a minute and try again.",
+  502: "Bookmap can't reach its engine right now. Try again in a moment.",
   503: "The engine is temporarily unavailable. Try again in a moment.",
   504: "The engine took too long to answer. Try again.",
 };
 
-async function toError(res: Response, fallback: string): Promise<EngineError> {
-  let message = FRIENDLY[res.status];
-  let code: string | undefined;
-  try {
-    const body = await res.json();
-    code = typeof body?.code === "string" ? body.code : undefined;
-    if (!message && typeof body?.error === "string" && body.error) message = body.error;
-  } catch {
-    /* not JSON */
-  }
-  return new EngineError(message || `${fallback} (HTTP ${res.status}).`, res.status, code);
+function toError(status: number, body: unknown, fallback: string): EngineError {
+  const b = (body ?? {}) as { error?: unknown; code?: unknown };
+  const code = typeof b.code === "string" ? b.code : undefined;
+  const message = FRIENDLY[status] || (typeof b.error === "string" && b.error) || `${fallback} (HTTP ${status}).`;
+  return new EngineError(message, status, code);
 }
 
-async function call(path: string, init: RequestInit, fallback: string): Promise<Response> {
+/** A 401 means the session ended: send the reader back to sign in. */
+function signedOut(status: number) {
+  if (status === 401 && typeof window !== "undefined") {
+    window.location.assign(`/?next=${encodeURIComponent(window.location.pathname)}`);
+  }
+}
+
+async function call<T>(path: string, init: RequestInit, fallback: string): Promise<{ status: number; body: T; headers: Headers }> {
   let res: Response;
   try {
     res = await fetch(`${BASE}/${path}`, { cache: "no-store", ...init });
   } catch {
-    throw new EngineError("Can't reach the server. Check your connection and try again.", 0);
+    throw new EngineError("Can't reach Bookmap. Check your connection and try again.", 0);
   }
-  if (!res.ok) throw await toError(res, fallback);
-  return res;
-}
-
-/** Parse a JSON body; a proxy error page or truncated body becomes a readable EngineError. */
-async function json<T>(res: Response): Promise<T> {
+  let body: unknown = null;
   try {
-    return (await res.json()) as T;
+    body = await res.json();
   } catch {
-    throw new EngineError("The engine sent an unexpected response. Try again in a moment.", res.status);
+    /* not JSON */
   }
+  if (!res.ok) {
+    signedOut(res.status);
+    throw toError(res.status, body, fallback);
+  }
+  if (body === null) throw new EngineError("The engine sent an unexpected response. Try again in a moment.", res.status);
+  return { status: res.status, body: body as T, headers: res.headers };
 }
 
-function retryAfterMs(res: Response): number {
-  const seconds = Number(res.headers.get("retry-after"));
+/** Delay before the next status check, honouring Retry-After (2-30 s). */
+export function retryAfterMs(headers: Headers | null): number {
+  const seconds = Number(headers?.get("retry-after"));
   if (!Number.isFinite(seconds) || seconds <= 0) return 5000;
   return Math.min(30, Math.max(2, seconds)) * 1000;
 }
 
-export interface IndexPoll {
-  status: IndexStatus;
-  /** Present while the document is still being indexed. */
-  retryAfterMs?: number;
-}
-
-async function asPoll(res: Response): Promise<IndexPoll> {
-  const status = await json<IndexStatus>(res);
-  if (!status || typeof status.status !== "string") {
-    throw new EngineError("The engine sent an unexpected response. Try again in a moment.", res.status);
-  }
-  return status.status === "ready" ? { status } : { status, retryAfterMs: retryAfterMs(res) };
-}
-
 // ─── Calls ───────────────────────────────────────────────────────────────────
 
-export async function uploadDocument(body: Blob, contentType: string): Promise<IndexPoll> {
-  const res = await call(
-    "upload",
-    { method: "POST", headers: { "content-type": contentType }, body },
-    "Upload failed"
-  );
-  return asPoll(res);
+/** Uploads a book with progress events (fetch can't report upload progress). */
+export function uploadBook(
+  file: File,
+  contentType: string,
+  onProgress: (fraction: number) => void,
+  signal?: AbortSignal
+): Promise<IndexStatus> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    signal?.addEventListener("abort", () => xhr.abort());
+    xhr.onabort = () => reject(new EngineError("Upload cancelled.", 0, "ABORTED"));
+    xhr.open("POST", `${BASE}/upload`);
+    xhr.setRequestHeader("content-type", contentType);
+    xhr.setRequestHeader("x-file-name", encodeURIComponent(file.name));
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded / e.total);
+    };
+    xhr.onerror = () => reject(new EngineError("The upload was interrupted. Check your connection and try again.", 0));
+    xhr.ontimeout = () => reject(new EngineError("The upload took too long. Try again on a faster connection.", 0));
+    xhr.onload = () => {
+      let body: unknown = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        /* not JSON */
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        signedOut(xhr.status);
+        reject(toError(xhr.status, body, "Upload failed"));
+        return;
+      }
+      const status = body as IndexStatus | null;
+      if (!status?.knowledgeId || !status.bookId) {
+        reject(new EngineError("The engine sent an unexpected response. Try again in a moment.", xhr.status));
+        return;
+      }
+      resolve(status);
+    };
+    xhr.send(file);
+  });
 }
 
-export async function indexUrl(source: string): Promise<IndexPoll> {
-  const res = await call(
+export async function addLink(source: string): Promise<IndexStatus> {
+  const { body } = await call<IndexStatus>(
     "index",
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source }) },
-    "Indexing failed"
+    "Adding that link failed"
   );
-  return asPoll(res);
+  if (!body.knowledgeId || !body.bookId) throw new EngineError("The engine sent an unexpected response. Try again in a moment.", 200);
+  return body;
 }
 
-export async function getIndexStatus(knowledgeId: string): Promise<IndexPoll> {
-  const res = await call(`index/${encodeURIComponent(knowledgeId)}`, { method: "GET" }, "Status check failed");
-  return asPoll(res);
+export async function getIndexStatus(knowledgeId: string): Promise<{ status: IndexStatus; retryAfterMs: number }> {
+  const { body, headers } = await call<IndexStatus>(`index/${encodeURIComponent(knowledgeId)}`, { method: "GET" }, "Status check failed");
+  return { status: body, retryAfterMs: retryAfterMs(headers) };
 }
 
 export async function getGraph(knowledgeId: string): Promise<KnowledgeGraph> {
-  const res = await call(`graph/${encodeURIComponent(knowledgeId)}`, { method: "GET" }, "Loading the graph failed");
-  const graph = await json<KnowledgeGraph>(res);
+  const { body } = await call<KnowledgeGraph>(`graph/${encodeURIComponent(knowledgeId)}`, { method: "GET" }, "Loading the map failed");
   return {
-    ...graph,
-    nodes: Array.isArray(graph?.nodes) ? graph.nodes : [],
-    edges: Array.isArray(graph?.edges) ? graph.edges : [],
+    nodes: Array.isArray(body?.nodes) ? body.nodes : [],
+    edges: Array.isArray(body?.edges) ? body.edges : [],
   };
 }
 
 export async function startTest(knowledgeId: string, settings: TestSettings): Promise<StartResponse> {
-  const { difficulty, threshold } = DIFFICULTY_VALUES[settings.difficulty];
-  const res = await call(
+  const { status, body } = await call<StartResponse & { error?: string; code?: string }>(
     "verify",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        knowledgeId,
-        subject: "anonymous",
-        config: {
-          max_questions: settings.questions,
-          difficulty,
-          threshold,
-          q_types: settings.types,
-          response: "detailed",
-        },
-      }),
-    },
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ knowledgeId, settings }) },
     "Starting the test failed"
   );
-  const body = await json<StartResponse & { error?: string; code?: string }>(res);
-  // 202 = the document is still being indexed (INDEXING_IN_PROGRESS), no session yet.
-  if (res.status !== 200 || !body?.sessionId || !body.question) {
+  // 202 = the book is still being mapped (INDEXING_IN_PROGRESS), no session yet.
+  if (status !== 200 || !body?.sessionId || !body.question) {
     throw new EngineError(
       body?.code === "INDEXING_IN_PROGRESS"
-        ? "That document is still being mapped. Try again in a few seconds."
+        ? "This book is still being mapped. Try again in a few seconds."
         : body?.error || "The test couldn't start. Try again.",
-      res.status,
+      status,
       body?.code
     );
   }
@@ -266,40 +226,42 @@ export async function startTest(knowledgeId: string, settings: TestSettings): Pr
 }
 
 export async function submitAnswer(sessionId: string, answer: string): Promise<AnswerFeedback> {
-  const res = await call(
+  const { body } = await call<AnswerFeedback>(
     `verify/${encodeURIComponent(sessionId)}/answer`,
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answer }) },
     "Sending your answer failed"
   );
-  return json<AnswerFeedback>(res);
+  return body;
 }
 
-export async function getResult(sessionId: string): Promise<PoCWResult> {
-  const res = await call(`verify/${encodeURIComponent(sessionId)}/result`, { method: "GET" }, "Loading results failed");
-  return json<PoCWResult>(res);
+export async function getResult(sessionId: string): Promise<{ attemptId: number }> {
+  const { body } = await call<{ attemptId?: number }>(`verify/${encodeURIComponent(sessionId)}/result`, { method: "GET" }, "Loading results failed");
+  if (!body.attemptId) throw new EngineError("Your results couldn't be saved. Try again.", 200);
+  return { attemptId: body.attemptId };
 }
 
 // ─── Client-side validation ──────────────────────────────────────────────────
 
 const EXT_TYPES: Record<string, string> = {
   pdf: "application/pdf",
+  epub: "application/epub+zip",
   txt: "text/plain",
   md: "text/markdown",
   markdown: "text/markdown",
 };
 
-export const ACCEPT_ATTR = ".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown";
+export const ACCEPT_ATTR = ".pdf,.epub,.txt,.md,.markdown,application/pdf,application/epub+zip,text/plain,text/markdown";
 
 /** Returns the content type to upload with, or an error message. */
 export function checkFile(file: File): { contentType: string } | { error: string } {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
   const contentType = EXT_TYPES[ext];
-  if (!contentType) return { error: `"${file.name}" isn't supported. Use a PDF, .txt or .md file.` };
+  if (!contentType) return { error: `"${file.name}" isn't a PDF, EPUB, .txt or .md file.` };
   if (file.size === 0) return { error: `"${file.name}" is empty.` };
   if (file.size > MAX_UPLOAD_BYTES) {
-    return { error: `"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is 10 MB.` };
+    return { error: `"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is 40 MB.` };
   }
-  return { contentType: contentType === "text/markdown" ? "text/markdown; charset=utf-8" : contentType === "text/plain" ? "text/plain; charset=utf-8" : contentType };
+  return { contentType };
 }
 
 export function checkUrl(value: string): { url: string } | { error: string } {
@@ -307,12 +269,12 @@ export function checkUrl(value: string): { url: string } | { error: string } {
   if (!trimmed) return { error: "Paste a link first." };
   let parsed: URL;
   try {
-    parsed = new URL(trimmed);
+    parsed = new URL(/^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`);
   } catch {
-    return { error: "That doesn't look like a link. It should start with http:// or https://." };
+    return { error: "That doesn't look like a link. It should start with https://." };
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { error: "Only http:// and https:// links are supported." };
+    return { error: "Only http:// and https:// links work." };
   }
   if (!parsed.hostname.includes(".") && parsed.hostname !== "localhost") {
     return { error: "That link is missing a domain." };
