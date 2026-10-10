@@ -12,7 +12,14 @@ type DB = Database.Database;
 const now = () => new Date().toISOString();
 export { now };
 
-const MIGRATIONS: string[] = [
+/** A migration is plain SQL, or a function for steps that must check what already exists. */
+type Migration = string | ((db: DB) => void);
+
+function hasColumn(db: DB, table: string, column: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === column);
+}
+
+const MIGRATIONS: Migration[] = [
   // v1: users, sessions, books, attempts, shares
   `
   CREATE TABLE users (
@@ -97,13 +104,55 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS attempts_book ON attempts(book_id);
   CREATE INDEX IF NOT EXISTS attempts_started ON attempts(started_at);
   `,
+  // v5: finding books instead of uploading them. Idempotent, so it is safe on a database that
+  // already has some of it.
+  //   books.cover_url    real cover (Open Library or Project Gutenberg), else the generated cloth cover
+  //   books.catalog_key  the catalog book the reader picked (Open Library work "OL…W" or Gutenberg
+  //                      "pg<id>"); its title, author and cover win over the file's or the engine's
+  //   catalog_cache      upstream answers (searches, lists, the Gutenberg catalog date), with fetch time
+  //   catalog_entries    every book the server has shown a reader, so later requests send only a key
+  //   gutenberg_books    Project Gutenberg's English texts, from its daily catalog, for matching
+  (conn) => {
+    if (!hasColumn(conn, "books", "cover_url")) conn.exec("ALTER TABLE books ADD COLUMN cover_url TEXT");
+    if (!hasColumn(conn, "books", "catalog_key")) conn.exec("ALTER TABLE books ADD COLUMN catalog_key TEXT");
+    conn.exec(`
+      CREATE INDEX IF NOT EXISTS books_source_url ON books(source_url);
+      CREATE TABLE IF NOT EXISTS catalog_cache (
+        key         TEXT PRIMARY KEY,
+        value       TEXT NOT NULL,
+        fetched_at  INTEGER NOT NULL          -- ms since epoch
+      );
+      CREATE TABLE IF NOT EXISTS catalog_entries (
+        key           TEXT PRIMARY KEY,       -- OL…W or pg<id>
+        title         TEXT NOT NULL,
+        author        TEXT,
+        year          INTEGER,
+        cover_url     TEXT,
+        gutenberg_id  INTEGER,
+        updated_at    TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS catalog_entries_gutenberg ON catalog_entries(gutenberg_id);
+      CREATE TABLE IF NOT EXISTS gutenberg_books (
+        id         INTEGER PRIMARY KEY,
+        title      TEXT NOT NULL,
+        author     TEXT,                     -- display form, "Jane Austen"
+        title_key  TEXT NOT NULL,            -- normalised full title
+        main_key   TEXT NOT NULL,            -- normalised title before any subtitle
+        surnames   TEXT NOT NULL             -- normalised author surnames, space separated
+      );
+      CREATE INDEX IF NOT EXISTS gutenberg_books_title ON gutenberg_books(title_key);
+      CREATE INDEX IF NOT EXISTS gutenberg_books_main ON gutenberg_books(main_key);
+    `);
+  },
 ];
 
 function migrate(db: DB): void {
   const current = db.pragma("user_version", { simple: true }) as number;
   for (let v = current; v < MIGRATIONS.length; v++) {
     db.transaction(() => {
-      db.exec(MIGRATIONS[v]);
+      const step = MIGRATIONS[v];
+      if (typeof step === "string") db.exec(step);
+      else step(db);
       db.pragma(`user_version = ${v + 1}`);
     })();
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { appOrigin, currentUser, type User } from "@/lib/server/auth";
+import { currentUser, type User } from "@/lib/server/auth";
 import {
   attemptBySession,
   bookByKnowledgeId,
@@ -8,12 +8,12 @@ import {
   finishAttempt,
   recordAnswer,
   setConceptCount,
-  updateBookStatus,
   upsertBook,
   setStoredFile,
   type AttemptSettings,
-  type Book,
 } from "@/lib/server/repo";
+import { ENGINE_API_KEY, crossSite, engine, error, indexLinkForUser, recordStatus, reply, str, type Method } from "@/lib/server/engine-proxy";
+import { resolveEntry } from "@/lib/server/catalog";
 import { saveOriginal } from "@/lib/server/uploads";
 import { now } from "@/lib/server/db";
 import { normalizeKeyPoints } from "@/lib/keypoints";
@@ -32,12 +32,8 @@ import { normalizeKeyPoints } from "@/lib/keypoints";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ENGINE_URL = (process.env.ENGINE_URL || "http://engine:3000").replace(/\/+$/, "");
-const ENGINE_API_KEY = process.env.ENGINE_API_KEY || "";
-
 const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 const MAX_JSON_BYTES = 256 * 1024;
-const UPSTREAM_TIMEOUT_MS = 120_000;
 const UPLOAD_TIMEOUT_MS = 300_000;
 
 /** Path segments that stand for an id (knowledgeId / sessionId). */
@@ -50,7 +46,6 @@ const UPLOAD_TYPES: Record<string, string> = {
   "text/markdown": "text/markdown; charset=utf-8",
 };
 
-type Method = "GET" | "POST";
 type Route = "upload" | "index" | "status" | "verify" | "answer" | "result" | "graph";
 
 /**
@@ -77,10 +72,6 @@ const QUESTION_TYPES = ["open", "mcq", "true_false"];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function error(status: number, message: string, code = "PROXY_ERROR"): NextResponse {
-  return NextResponse.json({ error: message, code }, { status, headers: { "cache-control": "no-store" } });
-}
-
 const notFound = () => error(404, "Not found", "NOT_FOUND");
 
 function match(method: Method, segments: string[]): Route | null {
@@ -100,29 +91,6 @@ function hasUnsafePath(request: NextRequest, segments: string[]): boolean {
   return segments.some(
     (s) => s.length === 0 || s === "." || s === ".." || s.includes("/") || s.includes("\\") || s.includes("\0")
   );
-}
-
-/** State-changing calls must come from our own pages (SameSite=Lax already blocks most of this). */
-function crossSite(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  return !!origin && origin !== appOrigin();
-}
-
-/**
- * Client IP for the engine's per-IP rate limit. Uses the right-most
- * X-Forwarded-For entry: that one is written by our own reverse proxy (Caddy
- * replaces the header, nginx-style proxies append), while anything to its left
- * is client-controlled and would let a caller pick a fresh rate-limit bucket
- * on every request.
- */
-function clientIp(request: NextRequest): string | null {
-  const hops = (request.headers.get("x-forwarded-for") ?? "")
-    .split(",")
-    .map((h) => h.trim())
-    .filter(Boolean);
-  const last = hops[hops.length - 1];
-  if (last && last.length <= 64) return last;
-  return null;
 }
 
 /** Read the request body, giving up as soon as it exceeds the limit. */
@@ -164,72 +132,6 @@ async function readJson(request: NextRequest): Promise<Record<string, unknown> |
   }
 }
 
-interface Upstream {
-  status: number;
-  headers: Headers;
-  json: Record<string, unknown> | null;
-  text: string;
-}
-
-/** Calls the engine. Returns a NextResponse for transport-level failures. */
-async function engine(
-  request: NextRequest,
-  method: Method,
-  path: string,
-  body?: { bytes: Uint8Array<ArrayBuffer>; contentType: string },
-  timeoutMs = UPSTREAM_TIMEOUT_MS
-): Promise<Upstream | NextResponse> {
-  const headers = new Headers({ authorization: `Bearer ${ENGINE_API_KEY}`, accept: "application/json" });
-  const ip = clientIp(request);
-  if (ip) headers.set("x-forwarded-for", ip);
-  if (body) headers.set("content-type", body.contentType);
-
-  let res: Response;
-  try {
-    res = await fetch(`${ENGINE_URL}/api/${path}`, {
-      method,
-      headers,
-      body: body?.bytes,
-      cache: "no-store",
-      redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (err) {
-    const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
-    return timedOut
-      ? error(504, "The engine took too long to answer", "UPSTREAM_TIMEOUT")
-      : error(502, "The engine is unreachable right now", "UPSTREAM_UNREACHABLE");
-  }
-
-  // Never leak upstream auth problems as-is: they are a server misconfiguration.
-  if (res.status === 401) {
-    await res.body?.cancel().catch(() => undefined);
-    return error(502, "The engine rejected this server's credentials", "UPSTREAM_AUTH");
-  }
-
-  const text = await res.text().catch(() => "");
-  let json: Record<string, unknown> | null = null;
-  try {
-    const parsed = JSON.parse(text);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) json = parsed;
-  } catch {
-    /* not JSON */
-  }
-  return { status: res.status, headers: res.headers, json, text };
-}
-
-/** Pass the engine's answer through (status, Retry-After, body), optionally with extra fields. */
-function reply(up: Upstream, extra?: Record<string, unknown>): NextResponse {
-  const headers = new Headers({ "cache-control": "no-store" });
-  const retryAfter = up.headers.get("retry-after");
-  if (retryAfter) headers.set("retry-after", retryAfter);
-  if (up.json) return NextResponse.json(extra ? { ...up.json, ...extra } : up.json, { status: up.status, headers });
-  headers.set("content-type", up.headers.get("content-type") || "text/plain; charset=utf-8");
-  return new NextResponse(up.text, { status: up.status, headers });
-}
-
-const str = (v: unknown) => (typeof v === "string" ? v : undefined);
-
 function titleFromFileName(name: string): string {
   const base = name.replace(/\.[A-Za-z0-9]{1,8}$/, "");
   return base.replace(/[_]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) || "Untitled book";
@@ -239,19 +141,6 @@ function titleFromUrl(url: URL): string {
   const last = decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() ?? "");
   const cleaned = titleFromFileName(last.replace(/[-]+/g, " "));
   return cleaned && cleaned !== "Untitled book" ? cleaned : url.hostname.replace(/^www\./, "");
-}
-
-/** Records an index status for the user's book; counts concepts the first time it is ready. */
-async function recordStatus(request: NextRequest, book: Book, status: Record<string, unknown>): Promise<void> {
-  const s = str(status.status);
-  if (!s) return;
-  updateBookStatus(book.id, { status: s, title: status.title, author: status.author, error: status.error });
-  if (s === "ready" && book.conceptCount === null) {
-    const graph = await engine(request, "GET", `graph/${encodeURIComponent(book.knowledgeId)}`, undefined, 15_000);
-    if (!(graph instanceof NextResponse) && graph.status === 200 && Array.isArray(graph.json?.nodes)) {
-      setConceptCount(book.id, (graph.json!.nodes as unknown[]).length);
-    }
-  }
 }
 
 // ─── Route handlers ──────────────────────────────────────────────────────────
@@ -268,6 +157,10 @@ async function handleUpload(request: NextRequest, user: User): Promise<NextRespo
     fileName = "";
   }
   fileName = fileName.replace(/[\u0000-\u001f\u007f/\\]+/g, " ").trim().slice(0, 300);
+  // "Upload your copy" for a book picked in the catalog: the book row takes the catalog's title,
+  // author and cover instead of the file name. An unknown key just means a plain upload.
+  const catalogKey = (request.headers.get("x-catalog-key") || "").trim();
+  const catalog = catalogKey ? resolveEntry(catalogKey) : null;
 
   const bytes = await readBody(request, MAX_UPLOAD_BYTES);
   if (bytes === "too-large") return error(413, "That file is larger than 40 MB", "PAYLOAD_TOO_LARGE");
@@ -281,7 +174,10 @@ async function handleUpload(request: NextRequest, user: User): Promise<NextRespo
   const book = upsertBook({
     userId: user.id,
     knowledgeId,
-    title: titleFromFileName(fileName || "Untitled book"),
+    title: catalog?.title ?? titleFromFileName(fileName || "Untitled book"),
+    author: catalog?.author ?? null,
+    coverUrl: catalog?.coverUrl ?? null,
+    catalogKey: catalog?.key ?? null,
     sourceKind: "file",
     fileName: fileName || null,
     status: str(up.json?.status) ?? "pending",
@@ -306,22 +202,8 @@ async function handleIndex(request: NextRequest, user: User): Promise<NextRespon
     return error(400, "Only http:// and https:// links are supported", "INVALID_URL");
   }
 
-  const bytes = new TextEncoder().encode(JSON.stringify({ source: url.href }));
-  const up = await engine(request, "POST", "index", { bytes, contentType: "application/json" });
-  if (up instanceof NextResponse) return up;
-  const knowledgeId = str(up.json?.knowledgeId);
-  if (up.status >= 300 || !knowledgeId) return reply(up);
-
-  const book = upsertBook({
-    userId: user.id,
-    knowledgeId,
-    title: titleFromUrl(url),
-    sourceKind: "link",
-    sourceUrl: url.href,
-    status: str(up.json?.status) ?? "pending",
-  });
-  await recordStatus(request, book, up.json!);
-  return reply(up, { bookId: book.id });
+  const { response } = await indexLinkForUser(request, user.id, url, titleFromUrl(url));
+  return response;
 }
 
 async function handleStatus(request: NextRequest, user: User, knowledgeId: string): Promise<NextResponse> {

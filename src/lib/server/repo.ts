@@ -18,6 +18,10 @@ export interface Book {
   sourceUrl: string | null;
   fileName: string | null;
   storedFile: string | null;
+  /** A real cover (Open Library or Project Gutenberg), when the book was picked from the catalog. */
+  coverUrl: string | null;
+  /** The catalog book the reader picked (OL…W or pg<id>); its title and author are kept. */
+  catalogKey: string | null;
   status: BookStatus;
   error: string | null;
   conceptCount: number | null;
@@ -122,6 +126,8 @@ function toBook(r: any): Book {
     sourceUrl: r.source_url,
     fileName: r.file_name,
     storedFile: r.stored_file ?? null,
+    coverUrl: r.cover_url ?? null,
+    catalogKey: r.catalog_key ?? null,
     status: r.status,
     error: r.error,
     conceptCount: r.concept_count,
@@ -182,6 +188,10 @@ export function upsertBook(input: {
   userId: number;
   knowledgeId: string;
   title: string;
+  author?: string | null;
+  coverUrl?: string | null;
+  /** Set when the reader picked this book in the catalog: its title, author and cover then win. */
+  catalogKey?: string | null;
   sourceKind: "file" | "link";
   sourceUrl?: string | null;
   fileName?: string | null;
@@ -189,17 +199,24 @@ export function upsertBook(input: {
 }): Book {
   const row = db()
     .prepare(
-      `INSERT INTO books (user_id, knowledge_id, title, source_kind, source_url, file_name, status, added_at)
-       VALUES (@userId, @knowledgeId, @title, @sourceKind, @sourceUrl, @fileName, @status, @t)
+      `INSERT INTO books (user_id, knowledge_id, title, author, cover_url, catalog_key, source_kind, source_url, file_name, status, added_at)
+       VALUES (@userId, @knowledgeId, @title, @author, @coverUrl, @catalogKey, @sourceKind, @sourceUrl, @fileName, @status, @t)
        ON CONFLICT(user_id, knowledge_id) DO UPDATE SET
          status = CASE WHEN books.status = 'ready' THEN books.status ELSE excluded.status END,
-         error = CASE WHEN excluded.status = 'failed' THEN books.error ELSE NULL END
+         error = CASE WHEN excluded.status = 'failed' THEN books.error ELSE NULL END,
+         title = CASE WHEN excluded.catalog_key IS NOT NULL THEN excluded.title ELSE books.title END,
+         author = CASE WHEN excluded.catalog_key IS NOT NULL THEN excluded.author ELSE books.author END,
+         cover_url = CASE WHEN excluded.catalog_key IS NOT NULL THEN excluded.cover_url ELSE books.cover_url END,
+         catalog_key = COALESCE(excluded.catalog_key, books.catalog_key)
        RETURNING *`
     )
     .get({
       userId: input.userId,
       knowledgeId: input.knowledgeId,
       title: input.title.slice(0, 300) || "Untitled book",
+      author: input.author?.slice(0, 200) || null,
+      coverUrl: input.coverUrl?.slice(0, 500) || null,
+      catalogKey: input.catalogKey || null,
       sourceKind: input.sourceKind,
       sourceUrl: input.sourceUrl?.slice(0, 2000) ?? null,
       fileName: input.fileName?.slice(0, 300) ?? null,
@@ -223,7 +240,10 @@ export function bookByKnowledgeId(userId: number, knowledgeId: string): Book | n
   return row ? toBook(row) : null;
 }
 
-/** Applies an engine index status to every copy of this book the user has. */
+/**
+ * Applies an engine index status to the user's book. The engine's title and author (from the
+ * file) fill in only for books that weren't picked from the catalog.
+ */
 export function updateBookStatus(
   bookId: number,
   status: { status: string; title?: unknown; author?: unknown; error?: unknown }
@@ -235,8 +255,8 @@ export function updateBookStatus(
     .prepare(
       `UPDATE books SET
          status = @status,
-         title = COALESCE(@title, title),
-         author = COALESCE(@author, author),
+         title = CASE WHEN catalog_key IS NULL THEN COALESCE(@title, title) ELSE title END,
+         author = CASE WHEN catalog_key IS NULL THEN COALESCE(@author, author) ELSE author END,
          error = CASE WHEN @status = 'failed' THEN @error ELSE NULL END
        WHERE id = @id`
     )
@@ -434,6 +454,7 @@ export interface SharedResult {
   name: string | null;
   bookTitle: string;
   bookAuthor: string | null;
+  bookCover: string | null;
   score: number;
   mastered: number;
   tested: number;
@@ -447,7 +468,7 @@ export function sharedResult(slug: string): SharedResult | null {
   if (!/^[A-Za-z0-9]{6,32}$/.test(slug)) return null;
   const row = db()
     .prepare(
-      `SELECT s.slug, u.name, b.title, b.author, a.score, a.concepts, a.questions_asked, a.finished_at
+      `SELECT s.slug, u.name, b.title, b.author, b.cover_url, a.score, a.concepts, a.questions_asked, a.finished_at
          FROM shares s
          JOIN attempts a ON a.id = s.attempt_id
          JOIN books b ON b.id = a.book_id
@@ -455,7 +476,17 @@ export function sharedResult(slug: string): SharedResult | null {
         WHERE s.slug = ? AND a.finished_at IS NOT NULL`
     )
     .get(slug) as
-    | { slug: string; name: string | null; title: string; author: string | null; score: number; concepts: string; questions_asked: number; finished_at: string }
+    | {
+        slug: string;
+        name: string | null;
+        title: string;
+        author: string | null;
+        cover_url: string | null;
+        score: number;
+        concepts: string;
+        questions_asked: number;
+        finished_at: string;
+      }
     | undefined;
   if (!row) return null;
   const concepts = parse<ConceptOutcome[]>(row.concepts, []);
@@ -465,6 +496,7 @@ export function sharedResult(slug: string): SharedResult | null {
     name: row.name,
     bookTitle: row.title,
     bookAuthor: row.author,
+    bookCover: row.cover_url,
     score: Math.round(row.score ?? 0),
     mastered: tested.filter((c) => c.mastered).length,
     tested: tested.length,
